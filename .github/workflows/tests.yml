@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compile check
+        run: python -m compileall -q mcd_timemachine
+
+      - name: Run unittest
+        run: python -m unittest discover -s tests -v
+
+      - name: Smoke run (demo mode, no token required)
+        run: |
+          python -m mcd_timemachine demo --count 40 --out /tmp/mcdtm-ci
+          test -f /tmp/mcdtm-ci/report.html
+          test -f /tmp/mcdtm-ci/report.md
+          test -f /tmp/mcdtm-ci/provenance.json

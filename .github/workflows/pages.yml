@@ -1,0 +1,47 @@
+name: pages
+
+# 把「示例数据报告」发布成公开网页，让访客不用装 Python 也能一眼看到效果。
+# 首次使用需在仓库 Settings → Pages → Source 选择 "GitHub Actions"。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 生成示例报告
+        run: |
+          python -m mcd_timemachine demo --count 160 --out build
+          mkdir -p public
+          cp build/report.html public/index.html
+          cp build/report.md public/report.md
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -14,6 +14,14 @@
 
   function $(id) { return doc.getElementById(id); }
   function safe(fn) { try { fn(); } catch (e) { /* 增强功能失败不影响阅读 */ } }
+
+  // 统一用 textContent 建节点：订单里的商品名等动态文本一律按纯文本处理，
+  // 绝不被当作 HTML 解析（不使用 innerHTML 拼接）
+  function el(tag, text) {
+    var node = doc.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
   function reduceMotion() {
     try {
       return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -331,6 +339,16 @@
       };
     }
 
+    // 预览行 <li><b>标签</b><span>值</span></li>，标签与值都走 textContent
+    function previewRow(label, text) {
+      var li = el("li");
+      li.appendChild(el("b", label));
+      if (text !== undefined && text !== null && text !== "") {
+        li.appendChild(el("span", text));
+      }
+      return li;
+    }
+
     function currentRows() {
       var rows = [];
       for (var i = 0; i < order.length; i++) {
@@ -352,21 +370,14 @@
       drawCard(canvas, cfg);
 
       if (previewList) {
-        previewList.innerHTML = "";
-        var head = doc.createElement("li");
-        head.innerHTML = "<b>麦麦时光机 · 我的年度回忆</b>";
-        previewList.appendChild(head);
-        var p = doc.createElement("li");
-        p.innerHTML = "<b>我的口味人格</b><span>" + String(cfg.persona) + "</span>";
-        previewList.appendChild(p);
-        var kw = doc.createElement("li");
-        kw.innerHTML = "<b>年度关键词</b><span>" +
-          ((DATA.keywords || []).join("、") || "—") + "</span>";
-        previewList.appendChild(kw);
+        previewList.textContent = "";
+        previewList.appendChild(previewRow("麦麦时光机 · 我的年度回忆", null));
+        previewList.appendChild(previewRow("我的口味人格", cfg.persona));
+        previewList.appendChild(
+          previewRow("年度关键词", (DATA.keywords || []).join("、") || "—")
+        );
         for (var i = 0; i < rows.length; i++) {
-          var li = doc.createElement("li");
-          li.innerHTML = "<b>" + rows[i].label + "</b><span>" + rows[i].text + "</span>";
-          previewList.appendChild(li);
+          previewList.appendChild(previewRow(rows[i].label, rows[i].text));
         }
       }
 
@@ -392,13 +403,14 @@
       return lines.join("\n");
     }
 
-    for (var i = 0; i < order.length; i++) {
-      var el = $("f-" + order[i]);
-      if (!el) continue;
-      toggles[order[i]] = el;
-      el.addEventListener("change", refresh);
+    for (var j = 0; j < order.length; j++) {
+      // 注意：变量名不能叫 el —— var 是函数级提升，会遮蔽上面的 el() 建节点助手
+      var box = $("f-" + order[j]);
+      if (!box) continue;
+      toggles[order[j]] = box;
+      box.addEventListener("change", refresh);
       // 与 Python 侧默认保持一致：未勾选即隐藏
-      el.checked = !!(DATA.privacy && DATA.privacy[order[i]]);
+      box.checked = !!(DATA.privacy && DATA.privacy[order[j]]);
     }
 
     var toast = $("toast");

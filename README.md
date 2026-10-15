@@ -211,8 +211,8 @@ mcd-time-machine/
 │   └── cli.py            # 命令行入口
 ├── scripts/
 │   ├── windows_wizard.py # Windows 一键联调向导
-│   └── smoke_story.js    # 故事页前端冒烟测试（增强 / 降级双路径，需 jsdom）
-├── tests/                # 130+ 条 unittest 用例，零第三方依赖
+│   └── smoke_story.js    # 故事页前端冒烟测试（增强 / 降级 / 恶意数据三路径，需 jsdom）
+├── tests/                # 150+ 条 unittest 用例，零第三方依赖
 ├── docs/preview.html     # 示例年度报告（可直接在浏览器打开）
 ├── docs/preview-story.html  # 示例年度故事页（V2.0）
 ├── skill/SKILL.md        # WorkBuddy Skill 定义（对话式使用）
@@ -234,11 +234,12 @@ python -m unittest discover -s tests -v
 覆盖：空数据、缺金额/缺日期订单、重复订单去重、嵌套单品字段污染、
 分页终止与截断、边界日期、连续打卡、HTML 转义与结构闭合、示例数据确定性，
 以及故事页的六章结构、离线无外链、动效降级开关、隐私默认值与 JSON 转义。
+还包含分享预览的注入回归：恶意商品名 / 门店名 / 特殊字符 / 中文长文本，属性转义与变量遮蔽护栏。
 
 `push` / `pull_request` 时 GitHub Actions 会在 Python 3.9 ~ 3.13 上自动跑编译检查、单元测试与 demo 冒烟，
 并额外起一个 `story` job：用 jsdom 加载 `story.html` 真跑一遍页面脚本
-（校验增强路径的渐显 / 章节导航 / 条形图，以及降级路径下内容仍完整可见、
-默认隐私字段不会进入卡片绘制）。
+（校验增强路径的渐显 / 章节导航 / 条形图，降级路径下内容仍完整可见，
+以及恶意数据路径下分享预览只按纯文本呈现、默认隐私字段不会进入卡片绘制）。
 
 ---
 

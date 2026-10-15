@@ -198,11 +198,24 @@ $ python -m compileall -q mcd_timemachine scripts
 | 保留原有报告 | `report.md` / `report.html` / `profile.json` 原样保留，新增 `story.html`；`mcdtm story` 可单独重刷故事页 |
 | 用独立分支与 PR 合并 | 分支 `feature/v2-story`，验收后再 PR 合入 `main`，不覆盖现有可用版本 |
 
-新增 `tests/test_story.py` 26 条（六章结构、标签闭合、无外链离线、隐私默认、JSON 转义防 `</script>` 逃逸、
-降级开关、卡片尺寸、空数据），单元测试 108 → **136 条**。
-另加 `scripts/smoke_story.js`：用 jsdom 真跑页面脚本，覆盖**增强路径**（渐显 / 圆点 / 条形图设宽）
-与**降级路径**（无 `IntersectionObserver` 时 36/36 内容仍可见），并断言默认状态下真实金额 / 门店 / 日期
+新增 `tests/test_story.py`（六章结构、标签闭合、无外链离线、隐私默认、JSON 转义防 `</script>` 逃逸、
+恶意商品名 / 特殊字符 / 中文长文本、属性转义、变量遮蔽护栏、降级开关、卡片尺寸、空数据），
+单元测试 108 → **154 条**。
+另加 `scripts/smoke_story.js`：用 jsdom 真跑页面脚本，覆盖**增强路径**（渐显 / 圆点 / 条形图设宽）、
+**降级路径**（无 `IntersectionObserver` 时 36/36 内容仍可见）与**恶意数据路径**（把商品名 / 门店名换成
+HTML 注入载荷与超长中文，断言预览区不产生任何可执行节点），并断言默认状态下真实金额 / 门店 / 日期
 不会被画进图片；GitHub Actions 新增 `story` job 每次推送自动执行。
+
+### 合并前修复：分享预览的 HTML 注入（P1，第五轮审查提出）
+
+| 问题 | 处理 | 证据 |
+| --- | --- | --- |
+| `story.js` 用 `innerHTML` 拼接口味标签、年度关键词与分享字段，订单内容里的 `<` `>` 会被当 HTML 解析 | 改为统一用 `textContent` + DOM 节点构建：新增 `el(tag, text)` 建节点助手与 `previewRow()` 组装预览行；`story.js` 中不再存在任何 `innerHTML` / `outerHTML` / `insertAdjacentHTML` / `document.write` | `tests/test_story.py::TestSharePreviewInjection`，及 `scripts/smoke_story.js` 恶意数据路径 30 项断言 |
+| 修复过程中引入的新缺陷：`initShare()` 里 `var el = $("f-…")` 因函数级提升**遮蔽**了 `el()` 助手，导致 `previewRow` 抛 `el is not a function`、分享面板整体失效（单元测试只做字符串断言，**未能发现**） | 循环变量改名 `box`（并加注释说明原因）；新增静态护栏测试禁止出现名为 `el` 的局部变量 / 参数 | `tests/test_story.py::TestNoShadowedHelper`；jsdom 冒烟从 10 项失败转为全通过 |
+| `_e()` 不转义单引号，而本模块片段统一用单引号包属性；`month` 取自订单日期前 7 个字符，属上游可控内容 | 新增 `_attr()`（`_e()` + `'` → `&#39;`），用于 `data-title` / `data-mask` / 月柱 `title` | `tests/test_story.py::TestAttributeEscaping`（含投毒 month 逃逸测试） |
+
+隐私默认值未改动：`PRIVACY_DEFAULTS = {"amount": False, "store": False, "date": False}`，
+并有测试固定住「未勾选即隐藏、且不进绘制文本与配置文本」这一行为。
 
 ## 十、WorkBuddy 在项目中的实际作用
 
@@ -218,8 +231,8 @@ $ python -m compileall -q mcd_timemachine scripts
 
 为免夸大，明确以下边界：
 
-1. **已完成**：示例数据全链路、136 条单元测试、CI 在 Python 3.9–3.13 上通过、编译检查通过、
-   故事页前端冒烟（jsdom，增强与降级双路径）通过。
+1. **已完成**：示例数据全链路、154 条单元测试、CI 在 Python 3.9–3.13 上通过、编译检查通过、
+   故事页前端冒烟（jsdom，增强 / 降级 / 恶意数据三路径）通过。
 2. **尚未完成**：**真实 MCP 联调需账号持有者本人执行**（WorkBuddy 没有用户的 Token，也不应索取）。
    在联调完成前，本项目不作「已通过真实环境验收」的表述。
    官方 `order-list` 描述为「查询**近期**订单」，服务端可能只返回有限条数，属接口范围而非本工具缺陷。

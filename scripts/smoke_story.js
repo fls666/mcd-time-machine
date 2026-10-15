@@ -1,9 +1,11 @@
 /* 故事页（story.html）前端冒烟测试。
  *
- * 用 jsdom 真跑一遍页面脚本，覆盖两条路径：
+ * 用 jsdom 真跑一遍页面脚本，覆盖三条路径：
  *   A. 增强路径：注入 IntersectionObserver，验证渐显、章节圆点、条形图初始化；
  *   B. 降级路径：不注入，验证脚本失效时六章内容依然完整可读。
- * 两条路径都会校验分享卡片的隐私默认值：未勾选的字段不得被画进图片。
+ *   C. 恶意数据路径：把商品名 / 门店名换成 HTML 注入载荷与超长中文，
+ *      验证分享预览区只以纯文本呈现，不产生任何可执行节点。
+ * 三条路径都会校验分享卡片的隐私默认值：未勾选的字段不得被画进图片。
  *
  * 本机运行（需要 jsdom）：
  *   npm install jsdom
@@ -29,6 +31,11 @@ try {
     JSDOM = require(path.join(process.env.HOME || '', '.workbuddy', 'binaries', 'node',
       'workspace', 'node_modules', 'jsdom')).JSDOM;
   } catch (e2) {
+    if (process.env.SMOKE_REQUIRE_JSDOM) {
+      // CI 里必须真跑；装不上就报错，不能让冒烟静默跳过
+      console.error('CI 要求执行故事页冒烟，但 jsdom 不可用：' + e2.message);
+      process.exit(1);
+    }
     console.warn('未安装 jsdom，跳过故事页冒烟测试。安装：npm install jsdom');
     process.exit(2);
   }
@@ -57,10 +64,10 @@ function makeCtx(sink) {
   });
 }
 
-function boot(withObserver) {
+function boot(withObserver, source) {
   const errors = [];
   const drawn = [];
-  const dom = new JSDOM(html, {
+  const dom = new JSDOM(source || html, {
     runScripts: 'dangerously',
     pretendToBeVisual: true,
     beforeParse(window) {
@@ -89,6 +96,26 @@ function boot(withObserver) {
     },
   });
   return { dom, errors, drawn };
+}
+
+// ------------------------------------------------ C 恶意数据源（P1 注入回归）
+const EVIL_NAME = '<img src=x onerror=alert(1)>恶意商品';
+const EVIL_STORE = "麦当劳' onmouseover='alert(2)<b>注入</b>&\"门店";
+const LONG_CJK = '超长' + '芝士双层牛肉汉堡加培根加蛋'.repeat(12);
+
+/* 把页面里的数据块整体换成恶意载荷，其余 HTML 保持原样：
+ * 这样测的是真实渲染 + 真实脚本，而不是手工造的片段。 */
+function hostileSource() {
+  const m = html.match(/(<script id="story-data"[^>]*>)([\s\S]*?)(<\/script>)/);
+  if (!m) return null;
+  const payload = JSON.parse(m[2]);
+  payload.persona = EVIL_NAME;
+  payload.keywords = [EVIL_NAME, LONG_CJK, '薯条'];
+  payload.fields.store.value = EVIL_STORE;
+  payload.fields.amount.value = '¥1<script>alert(3)</script>';
+  payload.fields.date.value = "2026-06-27'";
+  const raw = JSON.stringify(payload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  return html.replace(m[0], m[1] + raw + m[3]);
 }
 
 function commonChecks(doc, errors, drawn, label) {
@@ -168,7 +195,59 @@ setTimeout(() => {
     commonChecks(doc2, degraded.errors, degraded.drawn, '降级');
     degraded.dom.window.close();
 
-    console.log(failures === 0 ? '\n全部通过' : `\n${failures} 项失败`);
-    process.exit(failures === 0 ? 0 : 1);
+    // ------------------------------------------------- C 恶意数据路径（P1）
+    const evilHtml = hostileSource();
+    check('[恶意] 找到内联数据块', !!evilHtml);
+    if (!evilHtml) {
+      console.log(`\n${failures} 项失败`);
+      process.exit(1);
+    }
+    const hostile = boot(false, evilHtml);
+    setTimeout(() => {
+      const doc3 = hostile.dom.window.document;
+      // 先把三项隐私开关打开，让恶意值真正进入预览与配置文本
+      commonChecks(doc3, hostile.errors, hostile.drawn, '恶意');
+
+      const list = doc3.getElementById('fieldPreview');
+      const cfg = doc3.getElementById('configOut');
+      const injected = list.querySelectorAll('img,script,iframe,svg,object,embed');
+      check('[恶意] 预览区没有被注入任何元素', injected.length === 0,
+        injected.length + ' 个：' + Array.prototype.map.call(injected, (n) => n.tagName).join(','));
+      check('[恶意] 预览里没有可执行事件属性',
+        doc3.querySelectorAll('[onerror],[onmouseover],[onload],[onclick]').length === 0);
+      check('[恶意] 恶意商品名以纯文本呈现',
+        list.textContent.indexOf(EVIL_NAME) >= 0);
+      check('[恶意] 恶意门店名以纯文本呈现',
+        list.textContent.indexOf(EVIL_STORE) >= 0);
+      check('[恶意] 预览 HTML 里只有转义形态，没有真正的标签',
+        list.innerHTML.indexOf('&lt;img') >= 0 && list.innerHTML.indexOf('<img') === -1,
+        list.innerHTML.slice(0, 120));
+      check('[恶意] 超长中文关键词完整保留',
+        list.textContent.indexOf(LONG_CJK) >= 0 && cfg.textContent.indexOf(LONG_CJK) >= 0);
+
+      const labels = Array.prototype.map.call(list.querySelectorAll('b'),
+        (b) => b.textContent);
+      const allowed = ['麦麦时光机 · 我的年度回忆', '我的口味人格', '年度关键词',
+        '消费金额', '门店名称', '消费日期'];
+      check('[恶意] 预览的标签仍全是固定文案，未被数据污染',
+        labels.length > 0 && labels.every((t) => allowed.indexOf(t) >= 0),
+        labels.join(' / '));
+      check('[恶意] 预览行数与字段数一致，没有多出节点',
+        list.querySelectorAll('li').length === 3 + doc3.querySelectorAll('.sw input').length,
+        list.querySelectorAll('li').length + ' 行');
+      check('[恶意] 配置文本是纯文本容器，未被解析出子元素',
+        !!cfg && cfg.querySelectorAll('*').length === 0 &&
+        cfg.textContent.indexOf(EVIL_STORE) >= 0);
+      // 页面原本只有 2 个 script（内联数据块 + 主脚本），注入后数量不得变化
+      check('[恶意] 文档脚本节点数未增加',
+        doc3.querySelectorAll('script').length === 2,
+        doc3.querySelectorAll('script').length + ' 个');
+      check('[恶意] 画布上的恶意字段按原文当文字绘制（未被截断或改写）',
+        hostile.drawn.join('\n').indexOf(EVIL_STORE) >= 0);
+      hostile.dom.window.close();
+
+      console.log(failures === 0 ? '\n全部通过' : `\n${failures} 项失败`);
+      process.exit(failures === 0 ? 0 : 1);
+    }, 400);
   }, 400);
 }, 400);

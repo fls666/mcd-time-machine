@@ -55,4 +55,7 @@ jobs:
         run: python -m mcd_timemachine demo --count 120 --out build
 
       - name: Story page smoke test
+        env:
+          # 装上 jsdom 就必须真跑，装不上直接让 job 失败，不允许静默跳过
+          SMOKE_REQUIRE_JSDOM: "1"
         run: node scripts/smoke_story.js build/story.html

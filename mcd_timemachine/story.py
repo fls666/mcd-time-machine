@@ -75,6 +75,15 @@ def _e(text: Any) -> str:
     )
 
 
+def _attr(text: Any) -> str:
+    """属性值专用转义：本模块的片段统一用单引号包属性，必须再挡住单引号。
+
+    `month` 取自订单原始日期的前 7 个字符，理论上可被上游数据污染，
+    因此不能只依赖 `_e()`（它不转义 `'`）。
+    """
+    return _e(text).replace("'", "&#39;")
+
+
 def _json_for_html(data: Any) -> str:
     """把数据塞进 <script type="application/json">，必须打断 `</script>` 逃逸。"""
     return (
@@ -140,7 +149,7 @@ def build_story_payload(profile: Dict[str, Any]) -> Dict[str, Any]:
 
 def _pv(text: Any, mask: str = _HIDDEN_TEXT) -> str:
     """隐私字段：页面默认显示，「隐私浏览」开关打开后才就地打码。"""
-    return f"<span class='pv' data-mask='{_e(mask)}'>{_e(text)}</span>"
+    return f"<span class='pv' data-mask='{_attr(mask)}'>{_e(text)}</span>"
 
 
 _PV_MONEY_RE = re.compile(r"¥[\d,]+(?:\.\d+)?")
@@ -193,7 +202,7 @@ def _month_chart(monthly: List[Dict[str, Any]]) -> str:
         height = int(6 + 90 * ratio)
         label = str(m.get("month", ""))[-2:] + "月"
         cols.append(
-            f"<div title='{_e(m.get('month'))}：{m.get('orders')} 单'>"
+            f"<div title='{_attr(m.get('month'))}：{_attr(m.get('orders'))} 单'>"
             f"<i style='height:{height}px'></i><em>{_e(label)}</em></div>"
         )
     return f"<div class='month-chart'>{''.join(cols)}</div>"
@@ -205,7 +214,7 @@ def _scene(index: int, body: str, extra_class: str = "") -> str:
     title = CHAPTER_TITLES[index - 1] if 0 < index <= len(CHAPTER_TITLES) else ""
     cls = " ".join(part for part in ("scene", extra_class) if part)
     return (
-        f"<section class='{cls}' id='ch{index}' data-title='{_e(title)}'>"
+        f"<section class='{cls}' id='ch{index}' data-title='{_attr(title)}'>"
         f"<div class='scene-inner'>{body}</div></section>"
     )
 

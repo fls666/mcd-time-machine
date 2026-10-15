@@ -111,6 +111,174 @@ class TestPayload(unittest.TestCase):
         self.assertEqual(json.loads(raw)["name"], "</script><script>alert(1)</script>")
 
 
+EVIL_NAME = "<img src=x onerror=alert(1)>"
+EVIL_STORE = "麦当劳<b>注入</b>&\"'餐厅"
+LONG_CJK = "超长" + "芝士双层牛肉汉堡加培根加蛋" * 12
+SPECIAL_CHARS = "&<>\"'/\\%$#@!*()[]{}|;:，。、【】￥"
+
+
+def _hostile_profile(name: str = EVIL_NAME, store: str = EVIL_STORE):
+    """把不可信文本塞成最常点的单品，模拟真实 MCP 返回了恶意 / 超长 / 特殊字符字段。
+
+    走完整 analyze 链路，确保测的是真实会进入分享预览的数据，而不是手工伪造的 payload。
+    """
+    orders = generate(orders=20, seed=7)
+    for order in orders:
+        order["store"] = store
+        for item in order["items"]:
+            item["name"] = name
+    cov = build_coverage("mcp", 1, len(orders), orders)
+    return analyze(orders, None, cov)
+
+
+class TestSharePreviewInjection(unittest.TestCase):
+    """分享预览区不得把订单文本当 HTML 解析（P1：innerHTML 拼接注入）。"""
+
+    def setUp(self):
+        self.profile = _hostile_profile()
+        self.payload = build_story_payload(self.profile)
+        self.html = render_story(self.profile)
+
+    # ---- 源头：脚本一律用 textContent 建节点
+    def test_story_js_never_uses_innerhtml(self):
+        """只允许出现「赋值」形式的 HTML 注入接口，注释里提到不算。"""
+        js = (Path(__file__).resolve().parent.parent
+              / "mcd_timemachine" / "assets" / "story.js").read_text(encoding="utf-8")
+        for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
+            self.assertIsNone(re.search(r"[.\s(]%s\s*[=(]" % sink, js),
+                              f"story.js 仍在向 {sink} 写内容")
+
+    def test_story_js_builds_preview_from_nodes(self):
+        js = (Path(__file__).resolve().parent.parent
+              / "mcd_timemachine" / "assets" / "story.js").read_text(encoding="utf-8")
+        self.assertIn("function el(tag, text)", js)
+        self.assertIn("node.textContent = String(text)", js)
+        self.assertIn("previewRow(", js)
+
+    # ---- 数据：真实内容要保留，只是以纯文本呈现
+    def test_malicious_name_kept_in_payload(self):
+        """脱敏/转义不应悄悄丢掉内容，原值要能完整取回。"""
+        self.assertIn(EVIL_NAME, self.payload["keywords"])
+        self.assertIn(EVIL_STORE, self.payload["fields"]["store"]["value"])
+
+    def test_malicious_name_never_appears_unescaped(self):
+        """整份 HTML 里不许有一处未转义的恶意片段（含 JSON 数据块）。"""
+        self.assertNotIn(EVIL_NAME, self.html)
+        self.assertNotIn("<img src=x", self.html)
+        self.assertIn("&lt;img src=x onerror=alert(1)&gt;", self.html)
+
+    def test_malicious_store_not_executable_in_html(self):
+        self.assertNotIn("<b>注入</b>", self.html)
+        self.assertIn("&lt;b&gt;注入&lt;/b&gt;", self.html)
+
+    def test_json_payload_never_breaks_script_tag(self):
+        match = re.search(
+            r'<script id="story-data" type="application/json">(.*?)</script>', self.html, re.S)
+        self.assertIsNotNone(match)
+        data = json.loads(match.group(1))
+        self.assertIn(EVIL_NAME, data["keywords"])
+        self.assertNotIn("</script", match.group(1))
+
+    # ---- 特殊字符与中文长文本
+    def test_special_chars_escaped_once(self):
+        """只转义一次：页面上看到的就是原始字符本身，不是 &amp;lt; 这种双重编码。"""
+        html = render_story(_hostile_profile(SPECIAL_CHARS))
+        self.assertNotIn("&amp;lt;", html)
+        self.assertNotIn("&amp;amp;", html)
+        self.assertNotIn(SPECIAL_CHARS.replace("&", "&amp;") + "lt;", html)
+
+    def test_special_chars_still_parse_back(self):
+        html = render_story(_hostile_profile(SPECIAL_CHARS))
+        match = re.search(
+            r'<script id="story-data" type="application/json">(.*?)</script>', html, re.S)
+        data = json.loads(match.group(1))
+        self.assertTrue(any(SPECIAL_CHARS in kw for kw in data["keywords"]))
+
+    def test_long_cjk_name_preserved(self):
+        profile = _hostile_profile(LONG_CJK)
+        self.assertTrue(any(LONG_CJK in k["word"] for k in profile["keywords"]))
+        html = render_story(profile)
+        match = re.search(
+            r'<script id="story-data" type="application/json">(.*?)</script>', html, re.S)
+        data = json.loads(match.group(1))
+        self.assertTrue(any(LONG_CJK in kw for kw in data["keywords"]))
+
+    def test_long_cjk_does_not_break_structure(self):
+        html = render_story(_hostile_profile(LONG_CJK))
+        self.assertEqual(html.count("<section"), html.count("</section>"))
+        self.assertEqual(html.count("<div"), html.count("</div>"))
+        self.assertNotIn("__STORY_", html)
+
+    def test_special_chars_roundtrip_in_json(self):
+        from mcd_timemachine.story import _json_for_html
+
+        raw = _json_for_html({"n": SPECIAL_CHARS, "cjk": LONG_CJK})
+        back = json.loads(raw)
+        self.assertEqual(back["n"], SPECIAL_CHARS)
+        self.assertEqual(back["cjk"], LONG_CJK)
+
+    # ---- 隐私默认值不因视觉调整而改变
+    def test_privacy_defaults_unchanged_after_fix(self):
+        self.assertEqual(self.payload["privacy"],
+                         {"amount": False, "store": False, "date": False})
+        for key in ("amount", "store", "date"):
+            self.assertRegex(self.html, r"id='f-%s'(?! checked)" % key)
+            self.assertEqual(self.payload["fields"][key]["hidden_text"], "已隐藏")
+
+
+class TestNoShadowedHelper(unittest.TestCase):
+    """静态护栏：变量提升会遮蔽建节点助手，必须挡住这类写法。"""
+
+    def setUp(self):
+        self.js = (Path(__file__).resolve().parent.parent
+                   / "mcd_timemachine" / "assets" / "story.js").read_text(encoding="utf-8")
+
+    def test_no_local_variable_named_el(self):
+        """`var el = ...` 会在整个函数作用域内遮蔽 el() 助手，
+        导致 previewRow 抛 "el is not a function"，分享面板整体失效。"""
+        self.assertIsNone(re.search(r"\bvar\s+el\b", self.js), "story.js 里出现了遮蔽 el() 的变量")
+        self.assertIsNone(re.search(r"function\s*\(\s*el\s*\)", self.js),
+                          "story.js 里有名为 el 的参数，会遮蔽 el() 助手")
+
+    def test_helper_is_defined_exactly_once(self):
+        self.assertEqual(len(re.findall(r"function el\(tag, text\)", self.js)), 1)
+
+
+class TestAttributeEscaping(unittest.TestCase):
+    """属性值转义：本模块片段用单引号包属性，`_e()` 不管单引号，必须用 `_attr()`。"""
+
+    def test_attr_escapes_both_quote_styles(self):
+        from mcd_timemachine.story import _attr
+
+        self.assertEqual(_attr("a'b"), "a&#39;b")
+        self.assertEqual(_attr('a"b'), "a&quot;b")
+        self.assertEqual(_attr("a<b>&c"), "a&lt;b&gt;&amp;c")
+
+    def test_attribute_sites_use_attr_helper(self):
+        py = (Path(__file__).resolve().parent.parent
+              / "mcd_timemachine" / "story.py").read_text(encoding="utf-8")
+        for snippet in ("data-title='{_attr(title)}'",
+                        "data-mask='{_attr(mask)}'",
+                        "_attr(m.get('month'))"):
+            self.assertIn(snippet, py, "属性位置仍在用只挡双引号的 _e()")
+
+    def test_poisoned_month_cannot_break_out_of_attribute(self):
+        """month 取自订单日期前 7 个字符，上游若返回引号不得逃出属性。"""
+        profile = _profile()
+        profile["monthly"] = [{"month": "2026-06' onmouseover='alert(1)", "orders": 3}]
+        html = render_story(profile)
+        self.assertNotIn("onmouseover='alert", html)
+        self.assertNotIn('onmouseover="alert', html)
+        self.assertIn("&#39;", html)
+
+    def test_poisoned_month_still_readable_as_text(self):
+        profile = _profile()
+        profile["monthly"] = [{"month": "2026-06'x", "orders": 2}]
+        html = render_story(profile)
+        # 仍要出现在月柱上，不能因为转义被丢掉
+        self.assertIn("title='2026-06&#39;x：2 单'", html)
+
+
 class TestDegradation(unittest.TestCase):
     def setUp(self):
         self.html = render_story(_profile("demo"))

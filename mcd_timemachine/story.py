@@ -243,11 +243,11 @@ def _chapter_hero(profile: Dict[str, Any]) -> str:
         f"<div class='hero-stats'>{stat_html}</div>"
     )
     if not empty:
-        body += ("<a class='cta' href='#ch2'>进入故事 ↓</a>"
+        body += ("<a class='cta' href='#ch2'>进入故事</a>"
                  "<p class='hero-hint'>向下滚动即可翻页，右侧圆点可跳章；"
                  "想先核对数据可看同目录 report.html</p>")
     else:
-        body += ("<a class='cta' href='#ch2'>看看发生了什么 ↓</a>")
+        body += ("<a class='cta' href='#ch2'>看看发生了什么</a>")
     return _scene(1, body, "scene-hero")
 
 

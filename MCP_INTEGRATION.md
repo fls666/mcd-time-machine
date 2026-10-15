@@ -106,13 +106,40 @@ Token 只从环境变量读取（CLI 的 `--token` 仅作临时调试，不推�
 
 ## 6. 联调验证方式
 
+Windows 逐步教程见 [docs/WINDOWS_SETUP.md](./docs/WINDOWS_SETUP.md)，
+一键向导见 `scripts/windows_wizard.py`。
+
 ```bash
-export MCD_MCP_TOKEN="..."
+export MCD_MCP_TOKEN="..."      # Windows PowerShell: $env:MCD_MCP_TOKEN="..."
 mcdtm doctor      # 输出 serverInfo、工具总数、order-list 的 inputSchema 与首屏返回样例
 ```
 
-诊断结果写入 `mcdtm-output/doctor.json`。若 `order-list` 的实际返回结构与字段候选表不匹配，
-把该文件贴到 Issue 即可快速补兼容（无需改动上层分析逻辑）。
+诊断结果写入 `mcdtm-output/doctor.json`。
+
+### 6.1 如何安全地反馈真实结构
+
+`doctor.json` 与 `mcdtm-output/raw/` 内含**真实订单号、金额、门店**，不能直接公开。
+请先导出脱敏版本：
+
+```bash
+mcdtm share       # 生成 mcdtm-output/share.json
+```
+
+`share.json` 只保留**字段名与值的形状**：
+
+| 原值 | 脱敏后 |
+| --- | --- |
+| `MCD20260305123456` | `aaa99999999999999` |
+| `2026-03-05 12:30:00` | `9999-99-99 99:99:99` |
+| `38.5` | `<num:1dp:2位>` |
+| `南京西路餐厅` | `汉汉汉汉汉汉` |
+
+文件还附带 `suggested_mappings`，自动推断 order_id / order_time / order_amount /
+store / items_container / item_name / item_qty / item_price 对应的字段路径，
+据此即可直接补齐 `collector.py` 的候选表，无需改动上层分析逻辑。
+
+> 实现见 `mcd_timemachine/share.py`，脱敏逻辑有 14 条单元测试守卫
+> （`tests/test_share.py`），确保真实值不会泄漏进产物。
 
 ## 7. 业务价值
 

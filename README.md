@@ -72,6 +72,10 @@ mcdtm all         # 拉取（自动翻页）+ 分析 + 生成报告
 mcdtm demo --count 160
 ```
 
+**Windows 用户**：看 [docs/WINDOWS_SETUP.md](./docs/WINDOWS_SETUP.md)，
+从装 Python 到配环境变量到排障，每一步都有截图级说明；
+也可以直接跑 `python scripts\windows_wizard.py` 走一键向导。
+
 ---
 
 ## 命令一览
@@ -84,7 +88,8 @@ mcdtm demo --count 160
 | `mcdtm fetch` | 拉取历史订单（**自动翻页**）与菜单、营养、优惠券等增强数据 |
 | `mcdtm analyze` | 基于已拉取数据做分析并生成报告 |
 | `mcdtm all` | `fetch` + `analyze` |
-| `mcdtm inspect orders` | 打印某个工具的原始返回，便于核对字段结构 |
+| `mcdtm inspect orders` | 打印某个工具的原始返回，便于核对字段结构（**含隐私，勿公开**） |
+| `mcdtm share` | 导出**脱敏**后的结构报告 `share.json`，可安全贴到 Issue 求助 |
 
 通用参数（写在子命令前后都可以）：`--token` / `--endpoint`（默认 `https://mcp.mcd.cn`）/ `--out`（默认 `./mcdtm-output`）。
 `fetch` 另有 `--max-pages`（默认 30）与 `--page-size`（默认 100）。
@@ -196,9 +201,13 @@ python -m unittest discover -s tests -v
 
 ## 已知限制
 
-- **真实 MCP 联调需本人完成**：本项目已通过 50+ 单元测试与示例数据全链路验证，
-  但各账号的返回结构可能不同。首次使用请先运行 `mcdtm doctor`，
-  若 `order-list` 解析异常，把 `doctor.json` 中的返回结构贴到 Issue，我会补进字段候选表。
+- **真实 MCP 联调需本人完成**：本项目已通过 63 条单元测试与示例数据全链路验证，
+  但各账号的返回结构可能不同。首次使用请先运行 `mcdtm doctor`；
+  若 `order-list` 解析异常，跑 `mcdtm share` 生成脱敏结构报告贴到 Issue，
+  我会据此补进字段候选表（**不要贴 `doctor.json` 或 `raw/`，里面有真实数据**）。
+- **`order-list` 只返回「近期」订单**：这是麦当劳官方接口的范围（见
+  [工具说明](https://github.com/M-China/mcd-mcp-server)），服务端可能只保留有限条数。
+  本工具不会假装数据完整，会在「数据说明」里写清实际覆盖了多少单。
 - 只调用只读类 Tool，**不会下单、领券或抽奖**，因此不涉及任何写操作风险。
 - 门店、渠道等维度依赖返回体中是否有对应字段，缺失时会在「数据说明」中如实反映。
 
@@ -207,7 +216,8 @@ python -m unittest discover -s tests -v
 ## 常见问题
 
 **Q：为什么 `mcdtm fetch` 解析出 0 条订单？**
-A：先跑 `mcdtm doctor`。若结构确实不同，把 `doctor.json` 贴到 Issue，或直接改 `collector.py` 里的 `K_*` 字段候选表，欢迎 PR。
+A：先跑 `mcdtm doctor`，再跑 `mcdtm share`，把生成的 `share.json`（已脱敏）贴到 Issue。
+我据此补齐 `collector.py` 里的 `K_*` 字段候选表，通常一次就能修好。也欢迎直接 PR。
 
 **Q：会漏掉订单吗？**
 A：会翻页直到取不到新数据。若订单量极大且达到 `--max-pages` 上限，报告「数据说明」会明确标注不完整——不会默默少算。

@@ -23,8 +23,21 @@ from .collector import build_coverage, collect, load_coverage, load_normalized
 from .demo_data import generate
 from .mcp_client import DEFAULT_ENDPOINT, McpClient, McpError, TOOLS
 from .reporter import print_console, write_reports
+from .share import write_share
 
 DEFAULT_OUT = Path("mcdtm-output")
+
+
+def configure_windows_console() -> None:
+    """Windows 控制台默认用 GBK，中文输出可能抛 UnicodeEncodeError。
+
+    这里把标准流切到 UTF-8；失败时静默降级，不影响主流程。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        except (AttributeError, ValueError, OSError):
+            pass
 
 
 # ---------------------------------------------------------------- 辅助
@@ -170,6 +183,22 @@ def cmd_all(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_share(args: argparse.Namespace) -> int:
+    """导出脱敏后的结构报告，可安全贴到 Issue 求助。"""
+    out_dir: Path = args.out
+    if not out_dir.exists():
+        print(f"找不到 {out_dir}。请先执行 `mcdtm doctor` 或 `mcdtm fetch`。")
+        return 1
+    target = write_share(out_dir)
+    print(f"已生成 {target}")
+    if not (out_dir / "doctor.json").exists() and not (out_dir / "raw").is_dir():
+        print("提示：目录里还没有 doctor.json 或 raw/，请先跑 `mcdtm doctor`。")
+        return 1
+    print("内容仅含字段名与值形状，不含真实订单号 / 金额 / 门店，可安全公开。")
+    print(f"大小：{target.stat().st_size} 字节")
+    return 0
+
+
 def cmd_inspect(args: argparse.Namespace) -> int:
     path: Path = args.out / "raw" / f"{args.key}.json"
     if not path.exists():
@@ -245,10 +274,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_inspect.add_argument("--limit", type=int, default=4000, help="打印字符数上限")
     p_inspect.set_defaults(func=cmd_inspect)
 
+    p_share = sub.add_parser(
+        "share", parents=[common],
+        help="导出脱敏后的结构报告 share.json（可安全公开求助）")
+    p_share.set_defaults(func=cmd_share)
+
     return parser
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    configure_windows_console()
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

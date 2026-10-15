@@ -7,6 +7,8 @@ output/
 .env
 .env.*
 *.token
+*token*.txt
+*.key
 mcp-config.json
 
 # Python

@@ -184,7 +184,7 @@ def cmd_all(args: argparse.Namespace) -> int:
 
 
 def cmd_share(args: argparse.Namespace) -> int:
-    """导出脱敏后的结构报告，可安全贴到 Issue 求助。"""
+    """导出脱敏后的结构报告，用于排障求助（公开前仍需人工检查）。"""
     out_dir: Path = args.out
     if not out_dir.exists():
         print(f"找不到 {out_dir}。请先执行 `mcdtm doctor` 或 `mcdtm fetch`。")
@@ -194,7 +194,7 @@ def cmd_share(args: argparse.Namespace) -> int:
     if not (out_dir / "doctor.json").exists() and not (out_dir / "raw").is_dir():
         print("提示：目录里还没有 doctor.json 或 raw/，请先跑 `mcdtm doctor`。")
         return 1
-    print("内容仅含字段名与值形状，不含真实订单号 / 金额 / 门店，可安全公开。")
+    print("内容仅含字段名与值的类型/长度，已扫描手机号、邮箱、身份证、URL 与长串凭证。")
     print(f"大小：{target.stat().st_size} 字节")
     return 0
 
@@ -276,7 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_share = sub.add_parser(
         "share", parents=[common],
-        help="导出脱敏后的结构报告 share.json（可安全公开求助）")
+        help="导出脱敏后的结构报告 share.json（求助用，公开前请人工检查）")
     p_share.set_defaults(func=cmd_share)
 
     return parser

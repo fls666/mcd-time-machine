@@ -1,4 +1,8 @@
-"""脱敏导出：把真实 MCP 返回结构转成可以安全公开的形状描述。
+"""脱敏导出：把真实 MCP 返回结构转成不含原始值的形状描述。
+
+注意：脱敏能去掉绝大多数敏感内容，但**无法保证覆盖所有未知字段**，
+因此产物定位是「大幅降低风险的排障材料」，而不是「绝对安全的公开文件」。
+公开前仍应人工通读一遍。
 
 背景
 ----
@@ -72,19 +76,54 @@ _SEMANTIC: List[Tuple[str, Tuple[str, ...]]] = [
 ]
 
 
+# 字符串分类：只判定"是什么类型"，不保留任何一个原始字符
+_URL_RE = re.compile(r"^[a-z][a-z0-9+.\-]*://|://", re.I)
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
+_DATE_RE = re.compile(r"^\D*\d{4}[-/年.]\d{1,2}[-/月.]\d{1,2}")
+_TIME_RE = re.compile(r"\d{1,2}:\d{2}")
+_PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
+_IDCARD_RE = re.compile(r"^\d{17}[\dXx]$")
+_DIGITS_RE = re.compile(r"^\d+$")
+_ALPHA_RE = re.compile(r"^[A-Za-z]+$")
+_ALNUM_RE = re.compile(r"^[A-Za-z0-9]+$")
+_CJK_RE = re.compile(r"^[㐀-鿿]+$")
+_CJK_ANY_RE = re.compile(r"[㐀-鿿]")
+
+
+def _classify_str(text: str) -> str:
+    """判定字符串类别。只输出类别标签，绝不回显内容。"""
+    stripped = text.strip()
+    if not stripped:
+        return "blank"
+    if _URL_RE.search(stripped):
+        return "url"
+    if _EMAIL_RE.match(stripped):
+        return "email"
+    if _PHONE_RE.match(stripped):
+        return "phone"
+    if _IDCARD_RE.match(stripped):
+        return "idcard"
+    if _DATE_RE.match(stripped):
+        return "datetime" if _TIME_RE.search(stripped) else "date"
+    if _TIME_RE.match(stripped):
+        return "time"
+    if _DIGITS_RE.match(stripped):
+        # 10 位秒级 / 13 位毫秒级时间戳
+        return "timestamp" if len(stripped) in (10, 13) else "digits"
+    if _ALPHA_RE.match(stripped):
+        return "alpha"
+    if _ALNUM_RE.match(stripped):
+        return "alnum"
+    if _CJK_RE.match(stripped):
+        return "cjk"
+    if _CJK_ANY_RE.search(stripped):
+        return "cjk_mixed"
+    return "text"
+
+
 def _shape_str(text: str) -> str:
-    """把字符串压成形状：保留类型与长度，去掉内容。"""
-    out: List[str] = []
-    for ch in text:
-        if _DIGIT.match(ch):
-            out.append("9")
-        elif _ALPHA.match(ch):
-            out.append("a")
-        elif _CJK.match(ch):
-            out.append("汉")
-        else:
-            out.append(ch)
-    return "".join(out)
+    """字符串 -> `<str:长度:类别>`。不保留任何原始字符（含标点）。"""
+    return f"<str:{len(text)}:{_classify_str(text)}>"
 
 
 def _shape_num(value: Any) -> str:
@@ -170,7 +209,6 @@ def _freeze_index(index: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 # ------------------------------------------------------------------ 映射建议
 
-_DATE_SHAPE = re.compile(r"9{4}[-/.年]9{1,2}[-/.月]9{1,2}")
 _CONTAINER_HINTS = ("item", "goods", "product", "detail", "meal", "dish", "sku", "line")
 
 
@@ -241,8 +279,8 @@ def suggest_mappings(index: Dict[str, Dict[str, Any]]) -> Dict[str, List[str]]:
             push(target, path)
             break
         else:
-            # 兜底：字段名无关键词，但形状明显是日期
-            if isinstance(shape, str) and _DATE_SHAPE.search(shape):
+            # 兜底：字段名无关键词，但类别明显是日期
+            if isinstance(shape, str) and (":datetime>" in shape or ":date>" in shape):
                 push("order_time", path)
 
     return hints
@@ -254,7 +292,7 @@ def build_share(out_dir: Path) -> Dict[str, Any]:
     """汇总输出目录里的诊断与原始数据，产出可公开的结构报告。"""
     out_dir = Path(out_dir)
     payload: Dict[str, Any] = {
-        "note": "本文件由 mcdtm share 生成，值已脱敏，仅保留字段名与形状，可安全公开",
+        "note": "本文件由 mcdtm share 生成：值已替换为类型与长度，字段名保留。已自动扫描手机号/邮箱/身份证/URL/长串凭证，但无法穷举所有未知字段，公开前请人工检查",
         "generated_from": str(out_dir),
         "sections": {},
     }
@@ -316,17 +354,62 @@ def _maybe_json(text: Any) -> Any:
     return text
 
 
+# ------------------------------------------------------------------ 后置 PII 扫描
+
+# 最后一道防线：无论前面怎么脱敏，落盘前把整份产物再扫一遍。
+# 顺序不能随意调整——先处理结构化强的（邮箱/URL），再处理宽泛的（长串/数字）。
+_PII_PATTERNS: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-]+"), r"\1<redacted>"),
+    (re.compile(r"https?://[^\s\"'<>\\]+"), "<redacted:url>"),
+    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "<redacted:email>"),
+    (re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"), "<redacted:phone>"),
+    (re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)"), "<redacted:idcard>"),
+    (re.compile(r"(?<!\d)\d{16,19}(?!\d)"), "<redacted:cardnum>"),
+    (re.compile(r"\b[A-Za-z0-9_\-]{24,}\b"), "<redacted:token_like>"),
+    (re.compile(r"(?<![\d<>])\d{6,}(?![\d>])"), "<redacted:longnum>"),
+]
+
+
+def scan_pii(text: str) -> Tuple[str, List[str]]:
+    """扫描并替换残留的个人敏感信息，返回 (清洗后文本, 命中的类型列表)。"""
+    hits: List[str] = []
+    for pattern, repl in _PII_PATTERNS:
+        new_text, count = pattern.subn(repl, text)
+        if count:
+            hits.append(f"{repl.strip('<>')}x{count}")
+        text = new_text
+    return text, hits
+
+
 def _scrub_text(text: str) -> str:
-    """错误信息里可能夹带 Token / 订单号，做保守替换。"""
-    text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._\-]+", r"\1<redacted>", text)
-    text = re.sub(r"\b[A-Za-z0-9_\-]{24,}\b", "<redacted_token_like>", text)
-    return text
+    """错误信息里可能夹带 Token / 订单号 / URL，做保守替换并截断。"""
+    text, _ = scan_pii(text)
+    return text[:400]
 
 
 def write_share(out_dir: Path) -> Path:
-    """生成 mcdtm-output/share.json 并返回路径。"""
+    """生成 mcdtm-output/share.json 并返回路径。
+
+    落盘前对整份产物再做一次 PII 扫描，把命中类型记进 `pii_scan`，
+    便于使用者判断「是不是还有需要人工检查的地方」。
+    """
     out_dir = Path(out_dir)
     payload = build_share(out_dir)
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    text, hits = scan_pii(text)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        # 理论上不会发生（只替换值内容），真发生了就退化为纯文本说明
+        payload = {"error": "脱敏产物异常，请勿分享", "raw_length": len(text)}
+    payload["pii_scan"] = {
+        "performed": True,
+        "hits": hits or [],
+        "advice": (
+            "已自动替换疑似手机号/邮箱/身份证/卡号/URL/长串凭证。"
+            "由于无法穷举所有字段，公开前仍建议你人工通读一遍。"
+        ),
+    }
     target = out_dir / "share.json"
     target.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"

@@ -89,7 +89,7 @@ mcdtm demo --count 160
 | `mcdtm analyze` | 基于已拉取数据做分析并生成报告 |
 | `mcdtm all` | `fetch` + `analyze` |
 | `mcdtm inspect orders` | 打印某个工具的原始返回，便于核对字段结构（**含隐私，勿公开**） |
-| `mcdtm share` | 导出**脱敏**后的结构报告 `share.json`，可安全贴到 Issue 求助 |
+| `mcdtm share` | 导出**脱敏**后的结构报告 `share.json`，供排障求助（公开前仍需人工过目） |
 
 通用参数（写在子命令前后都可以）：`--token` / `--endpoint`（默认 `https://mcp.mcd.cn`）/ `--out`（默认 `./mcdtm-output`）。
 `fetch` 另有 `--max-pages`（默认 30）与 `--page-size`（默认 100）。
@@ -217,6 +217,8 @@ python -m unittest discover -s tests -v
 
 **Q：为什么 `mcdtm fetch` 解析出 0 条订单？**
 A：先跑 `mcdtm doctor`，再跑 `mcdtm share`，把生成的 `share.json`（已脱敏）贴到 Issue。
+  > 脱敏只保留字段名与值的类型，并会扫描手机号/邮箱/身份证/URL/长串凭证，
+  > 但**无法保证覆盖所有未知字段**，分享前请自己通读一遍。
 我据此补齐 `collector.py` 里的 `K_*` 字段候选表，通常一次就能修好。也欢迎直接 PR。
 
 **Q：会漏掉订单吗？**

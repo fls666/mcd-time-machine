@@ -12,7 +12,7 @@
     1. 检查 Python 版本（要求 3.9+）
     2. 让你粘贴 MCP Token（输入时不回显），可选永久写入用户环境变量
     3. 调用 mcdtm doctor，打印连通性诊断
-    4. 调用 mcdtm share，生成可安全公开的 mcdtm-output\\share.json
+    4. 调用 mcdtm share，生成脱敏后的 mcdtm-output\\share.json（公开前仍建议人工检查）
 
 Token 不会被写入任何项目文件，也不会打印到屏幕。
 """
@@ -147,7 +147,7 @@ def run_share(doctor_ok: bool) -> None:
     code = cli_main(["share", "--out", "mcdtm-output"])
     if code == 0:
         print("\n  把 mcdtm-output\\share.json 的内容贴到 Issue 即可，")
-        print("  里面只有字段名和值的形状，不含真实订单号、金额、门店。")
+        print("  里面只有字段名和值的类型与长度，已扫描手机号、邮箱、URL 等敏感串。")
 
 
 def main() -> int:

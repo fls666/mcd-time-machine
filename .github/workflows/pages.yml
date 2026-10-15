@@ -1,7 +1,13 @@
 name: pages
 
 # 把「示例数据报告」发布成公开网页，让访客不用装 Python 也能一眼看到效果。
-# 首次使用需在仓库 Settings → Pages → Source 选择 "GitHub Actions"。
+#
+# 关于 Pages 不可用的情况（本仓库此前失败的根因）：
+#   1. 仓库 Settings → Pages → Source 未设为 "GitHub Actions" 时，
+#      actions/configure-pages 会调用 Pages API 拿到 404 并直接失败。
+#   2. GitHub Free 账号的**私有**仓库不支持 Pages（需 Pro/Team/Enterprise）。
+# 因此这里先探测 Pages 是否真的可用，不可用时跳过部署并改用 artifact 兜底，
+# 保证工作流不会因为环境问题变红；转回公开并启用 Pages 后会自动恢复部署。
 
 on:
   push:
@@ -20,24 +26,54 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      pages_enabled: ${{ steps.pages-check.outputs.enabled }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: 生成示例报告
         run: |
           python -m mcd_timemachine demo --count 160 --out build
           mkdir -p public
           cp build/report.html public/index.html
           cp build/report.md public/report.md
+
+      - name: 检测 Pages 是否可用
+        id: pages-check
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pages")
+          echo "Pages API 状态码: $code"
+          if [ "$code" = "200" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Pages 可用，将执行部署。"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Pages 不可用（状态码 $code）。常见原因：Settings → Pages → Source 未设为 GitHub Actions，或私有仓库套餐不支持 Pages。本次仅上传 artifact。"
+          fi
+
       - uses: actions/configure-pages@v5
+        if: steps.pages-check.outputs.enabled == 'true'
       - uses: actions/upload-pages-artifact@v3
+        if: steps.pages-check.outputs.enabled == 'true'
         with:
           path: public
 
+      - name: 上传预览 artifact（任何情况下都可下载）
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-report
+          path: public
+          if-no-files-found: error
+
   deploy:
     needs: build
+    if: needs.build.outputs.pages_enabled == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

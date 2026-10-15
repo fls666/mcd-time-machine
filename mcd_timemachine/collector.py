@@ -71,6 +71,16 @@ PAGE_SHAPES: List[Tuple[str, str]] = [
 
 # 服务端可能给出的分页终止信号
 MORE_KEYS = ("hasMore", "hasNext", "hasNextPage", "isEnd", "isLast", "last")
+# 语义相反：值为 True 表示"没有更多了"
+NEGATIVE_MORE_KEYS = ("isEnd", "isLast", "last")
+CURSOR_KEYS = ("nextCursor", "cursor", "pageToken", "nextPageToken", "next", "token")
+TOTAL_KEYS = ("total", "totalCount", "totalNum", "totalSize", "recordCount", "count")
+TOTAL_PAGE_KEYS = ("totalPages", "pageCount", "totalPage", "pages")
+
+# inputSchema 里可能的参数命名
+PAGE_PARAM_NAMES = ("pageNo", "pageNum", "pageIndex", "page", "current", "currentPage")
+SIZE_PARAM_NAMES = ("pageSize", "size", "limit", "count", "rows")
+CURSOR_PARAM_NAMES = ("cursor", "nextCursor", "pageToken", "token")
 
 
 # ---------------------------------------------------------------- 通用工具
@@ -276,9 +286,14 @@ def normalize_orders(records: Iterable[Tuple[str, Dict[str, Any]]]) -> List[Dict
         moment = _parse_time(_pick(raw, K_ORDER_TIME, depth=1))
         items = _extract_items(raw)
         total = _to_float(_pick(raw, K_TOTAL, depth=1))
+        # 区分「实际支付金额」与「按商品单价×数量推算的金额」：
+        # 后者不含优惠券、配送费、退款等，不能等同于实付。
+        amount_source = "actual" if total is not None else "unknown"
         if total is None and items:
             subtotal = sum((it["price"] or 0) * it["qty"] for it in items)
-            total = round(subtotal, 2) if subtotal else None
+            if subtotal:
+                total = round(subtotal, 2)
+                amount_source = "estimated"
         orders.append(
             {
                 "key": key,
@@ -290,6 +305,7 @@ def normalize_orders(records: Iterable[Tuple[str, Dict[str, Any]]]) -> List[Dict
                 "store": str(_pick(raw, K_STORE, depth=1) or ""),
                 "channel": str(_pick(raw, K_CHANNEL, depth=1) or ""),
                 "total": total,
+                "amount_source": amount_source,
                 "discount": _to_float(_pick(raw, K_DISCOUNT, depth=1)),
                 "items": items,
             }
@@ -319,12 +335,26 @@ def build_coverage(
         "with_amount": sum(1 for o in orders if isinstance(o.get("total"), (int, float))),
         "with_items": sum(1 for o in orders if o.get("items")),
         "with_store": sum(1 for o in orders if o.get("store")),
+        "actual_amount_orders": sum(1 for o in orders if o.get("amount_source") == "actual"),
+        "estimated_amount_orders": sum(
+            1 for o in orders if o.get("amount_source") == "estimated"
+        ),
+        "unknown_amount_orders": sum(
+            1 for o in orders if o.get("amount_source") == "unknown"
+        ),
         "truncated": truncated,
         "warnings": warnings or [],
         "tools": tools or {},
         "range_start": min((o["date"] for o in orders if o.get("date")), default=""),
         "range_end": max((o["date"] for o in orders if o.get("date")), default=""),
     }
+    # 估算口径会让年度消费失真，必须在报告里讲清楚
+    if coverage["estimated_amount_orders"]:
+        coverage["warnings"] = list(coverage["warnings"]) + [
+            f"有 {coverage['estimated_amount_orders']} 单缺少实际支付金额，"
+            "已按「商品单价 × 数量」估算，未计入优惠券、配送费与退款，"
+            "年度消费总额可能与实际支出存在偏差。"
+        ]
     return coverage
 
 
@@ -337,36 +367,140 @@ def _build_page_args(shape: Tuple[str, str], page: int, page_size: int) -> Dict[
     return {key: page, size_key: page_size}
 
 
-def _has_more(payload: Any, got: int, page_size: int) -> bool:
-    """根据服务端信号或本页条数判断是否还有下一页。"""
+def _has_more(payload: Any, got: int, page_size: int) -> Optional[bool]:
+    """判断服务端是否明确表示还有下一页。
+
+    返回 True/False 表示服务端给了明确信号；返回 None 表示没有信号，
+    只能靠「本页是否满页」推断——这种情况不能算作已确认覆盖完整。
+    """
     if isinstance(payload, dict):
         for key in MORE_KEYS:
-            value = _pick(payload, (key,), depth=1)
+            value = _pick(payload, (key,), depth=2)
             if isinstance(value, bool):
-                return value
-    return got >= page_size
+                # isEnd / isLast 语义相反
+                return (not value) if key in NEGATIVE_MORE_KEYS else value
+    return None
+
+
+def _extract_cursor(payload: Any) -> Optional[str]:
+    """取出下一页游标（nextCursor / pageToken 等）。"""
+    if not isinstance(payload, dict):
+        return None
+    for key in CURSOR_KEYS:
+        value = _pick(payload, (key,), depth=2)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, (int, float)) and value:
+            return str(value)
+    return None
+
+
+def _extract_int(payload: Any, keys: Tuple[str, ...]) -> Optional[int]:
+    """取出服务端给出的总数 / 总页数，用于交叉验证是否真的翻完了。"""
+    if not isinstance(payload, dict):
+        return None
+    for key in keys:
+        value = _to_float(_pick(payload, (key,), depth=2))
+        if isinstance(value, (int, float)) and value > 0:
+            return int(value)
+    return None
+
+
+def _paging_shapes_from_schema(schema: Optional[Dict[str, Any]]) -> List[Tuple[str, str]]:
+    """按服务端真实的 inputSchema 推导分页参数组合，避免瞎猜。
+
+    服务端若忽略未知参数，可能一直返回同一页——靠 schema 精确匹配能大幅降低这种风险。
+    """
+    props = ((schema or {}).get("properties", {}) or {})
+    if not isinstance(props, dict) or not props:
+        return []
+    lower = {k.lower(): k for k in props}
+
+    def pick(candidates: Tuple[str, ...]) -> Optional[str]:
+        for cand in candidates:
+            if cand.lower() in lower:
+                return lower[cand.lower()]
+        return None
+
+    size_key = pick(SIZE_PARAM_NAMES)
+    if not size_key:
+        return []
+    shapes: List[Tuple[str, str]] = []
+    cursor_key = pick(CURSOR_PARAM_NAMES)
+    if cursor_key:
+        shapes.append((cursor_key, size_key))
+    for page_name in PAGE_PARAM_NAMES:
+        real = pick((page_name,))
+        if real:
+            shapes.append((real, size_key))
+    return shapes
+
+
+def _input_schema_of(client: McpClient, tool: str) -> Dict[str, Any]:
+    """尝试取目标工具的 inputSchema；客户端不支持时返回空字典。"""
+    list_tools = getattr(client, "list_tools", None)
+    if not callable(list_tools):
+        return {}
+    try:
+        tools = list_tools()
+    except Exception:
+        return {}
+    for item in tools or []:
+        if isinstance(item, dict) and item.get("name") == tool:
+            return item.get("inputSchema", {}) or {}
+    return {}
 
 
 def fetch_order_records(
     client: McpClient,
     max_pages: int = 30,
     page_size: int = 100,
+    schema: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Tuple[str, Dict[str, Any]]], Dict[str, Any]]:
-    """循环翻页拉取全部历史订单，返回 (去重后的记录, 分页元信息)。"""
+    """循环翻页拉取历史订单，返回 (去重后的记录, 分页元信息)。
+
+    分页参数优先来自服务端 inputSchema；schema 拿不到时才回退到候选组合。
+    停止原因会被显式记录下来：
+
+    - `exhausted`     服务端明确说没有更多了，或总数已对齐 → 覆盖面已确认
+    - `last_page`     最后一页不满页 → 覆盖面已确认
+    - `duplicate`     整页都是已见过的订单 → **未确认**，可能服务端忽略了分页参数
+    - `max_pages`     达到上限 → 未确认
+    """
     tool = TOOLS["orders"]
     last_error = ""
 
-    for shape in PAGE_SHAPES:
+    if schema is None:
+        schema = _input_schema_of(client, tool)
+    shapes = _paging_shapes_from_schema(schema) or list(PAGE_SHAPES)
+    used_schema = bool(_paging_shapes_from_schema(schema))
+
+    for shape in shapes:
         records: List[Tuple[str, Dict[str, Any]]] = []
         seen: set = set()
         raw_seen = 0
         pages = 0
         truncated = False
+        coverage_confirmed = False
+        stop_reason = "exhausted"
+        total_hint: Optional[int] = None
+        total_pages_hint: Optional[int] = None
+        server_confirmed = False  # 是否拿到过服务端的明确分页信号
+        paging_mode = "cursor" if shape[0].lower() in CURSOR_PARAM_NAMES else \
+            ("offset" if shape[0] == "offset" else "page")
         warnings: List[str] = []
+
         try:
+            cursor: Optional[str] = None
             page = 1
             while page <= max_pages:
-                args = _build_page_args(shape, page, page_size)
+                if paging_mode == "cursor":
+                    args: Dict[str, Any] = {shape[1]: page_size}
+                    if cursor:
+                        args[shape[0]] = cursor
+                else:
+                    args = _build_page_args(shape, page, page_size)
+
                 data, text = client.call_tool(tool, args)
                 payload = data if data not in (None, {}) else text
                 batch = extract_records(payload)
@@ -379,24 +513,92 @@ def fetch_order_records(
                     seen.add(key)
                     records.append((key, raw))
                     new_count += 1
-                if not batch or new_count == 0:
-                    break  # 无数据或全是重复，说明已到末尾（这一页不计入有效页数）
+
+                if total_hint is None:
+                    total_hint = _extract_int(payload, TOTAL_KEYS)
+                if total_pages_hint is None:
+                    total_pages_hint = _extract_int(payload, TOTAL_PAGE_KEYS)
+
+                if not batch:
+                    # 明确没有数据了
+                    stop_reason = "exhausted"
+                    coverage_confirmed = True
+                    break
+                if new_count == 0:
+                    # 整页重复：不能认定已取完，很可能是服务端忽略了分页参数
+                    stop_reason = "duplicate"
+                    coverage_confirmed = False
+                    break
+
                 pages = page
-                if not _has_more(payload, len(batch), page_size):
+
+                more = _has_more(payload, len(batch), page_size)
+                next_cursor = _extract_cursor(payload)
+                if more is not None or next_cursor or total_hint or total_pages_hint:
+                    server_confirmed = True
+
+                if more is False:
+                    stop_reason = "exhausted"
+                    coverage_confirmed = True
+                    break
+                if next_cursor:
+                    cursor = next_cursor
+                    page += 1
+                    continue
+                if total_pages_hint is not None and page >= total_pages_hint:
+                    stop_reason = "exhausted"
+                    coverage_confirmed = True
+                    break
+                if total_hint is not None and len(records) >= total_hint:
+                    stop_reason = "exhausted"
+                    coverage_confirmed = True
+                    break
+                if more is None and len(batch) < page_size:
+                    # 没有明确信号，只靠"本页不满"推断。
+                    # 服务端若忽略分页参数，也可能返回一个不满的重复页，
+                    # 所以没有拿到过任何服务端信号时，多探一页确认真的是空。
+                    if not server_confirmed and page < max_pages:
+                        page += 1
+                        continue
+                    stop_reason = "last_page"
+                    coverage_confirmed = True
                     break
                 page += 1
             else:
                 truncated = True
+                coverage_confirmed = False
+                stop_reason = "max_pages"
                 warnings.append(
                     f"已达到分页上限（第 {max_pages} 页），可能仍有订单未纳入统计，"
                     "请提高 --max-pages 后重新采集"
                 )
 
+            if stop_reason == "duplicate":
+                warnings.append(
+                    "翻页返回的订单与已获取的完全重复，服务端可能忽略了分页参数。"
+                    "覆盖范围未确认：本次统计可能不完整，请勿当作全年完整数据解读。"
+                )
+            if not used_schema:
+                warnings.append(
+                    "未能读取 order-list 的 inputSchema，分页参数是按常见命名试探的；"
+                    "建议先执行 `mcdtm doctor` 确认服务端支持的分页方式。"
+                )
+            if total_hint is not None and len(records) < total_hint:
+                warnings.append(
+                    f"服务端提示共 {total_hint} 条，实际取到 {len(records)} 条，"
+                    "可能存在未覆盖的订单。"
+                )
+
             return records, {
                 "shape": shape,
+                "paging_mode": paging_mode,
+                "schema_based": used_schema,
                 "pages": pages,
                 "raw_records": raw_seen,
                 "truncated": truncated,
+                "coverage_confirmed": coverage_confirmed,
+                "stop_reason": stop_reason,
+                "total_hint": total_hint,
                 "warnings": warnings,
             }
         except McpError as exc:

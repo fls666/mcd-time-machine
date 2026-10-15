@@ -60,7 +60,7 @@ python scripts\windows_wizard.py
 1. 检查 Python 版本（低于 3.9 会提示你去下载）
 2. 让你粘贴 Token（**输入时不回显**），并询问是否永久写入环境变量
 3. 自动跑 `doctor`，把连通性和真实返回结构打出来
-4. 自动生成 `mcdtm-output\share.json`（脱敏版，可安全发给别人求助）
+4. 自动生成 `mcdtm-output\share.json`（脱敏版，分享给他人求助前请自己先过目一遍）
 
 看到 `联调完成` 就可以跳到 [第 7 节](#7-生成真实年度报告)。
 如果卡住了，看 [第 8 节](#8-排障对照表)，或者继续往下看分步骤详解。
@@ -392,14 +392,21 @@ python -m mcd_timemachine share
 }
 ```
 
-**字段名全部保留，值全部变成"形状"**：
+**字段名全部保留，值全部替换成类型与长度，不保留任何一个原始字符**：
 
 | 原值 | 脱敏后 | 保留了什么 |
 | --- | --- | --- |
-| `MCD20260305123456` | `aaa99999999999999` | 字母/数字构成与长度 |
-| `2026-03-05 12:30:00` | `9999-99-99 99:99:99` | 日期格式 |
-| `38.5` | `<num:1dp:2位>` | 数字类型、小数位、数量级 |
-| `南京西路餐厅` | `汉汉汉汉汉汉` | 中文字符串及长度 |
+| `MCD20260305123456` | `<str:17:alnum>` | 是字母数字串、长度 17 |
+| `2026-03-05 12:30:00` | `<str:19:datetime>` | 是日期时间、长度 19 |
+| `38.5` | `<num:1dp:2位>` | 数字类型、1 位小数、2 位整数 |
+| `南京西路餐厅` | `<str:6:cjk>` | 是中文串、长度 6 |
+| `13812345678` | `<str:11:phone>` | 是手机号格式（值已丢弃） |
+
+生成时还会对整份产物再做一次敏感信息扫描，把手机号、邮箱、身份证、银行卡号、
+URL、24 位以上长串、6 位以上数字串替换掉，命中情况记在 `pii_scan.hits` 里。
+
+> ⚠️ **这仍不等于绝对安全。** 脱敏能去掉绝大多数敏感内容，但无法穷举所有未知字段。
+> 请把 `share.json` 当作「风险大幅降低的排障材料」，**公开前自己先通读一遍**。
 
 文件里还会附带一份 **`suggested_mappings`**（自动推断的字段映射建议）：
 
@@ -430,7 +437,8 @@ item_name     -> ['data.list[].items[].goodsName']
 | Token 存储 | 只从环境变量读，不写进任何项目文件 |
 | `.gitignore` 已排除 | `mcdtm-output/`、`.env`、`*token*.txt` 等 |
 | 不要公开的文件 | `mcdtm-output\raw\`、`mcdtm-output\orders.normalized.json` |
-| 可以公开的文件 | `mcdtm-output\share.json`（已脱敏） |
+| 建议公开前自查 | `mcdtm-output\share.json`（已脱敏，但仍建议人工通读） |
+| 绝对不要公开 | `mcdtm-output\raw\`、`doctor.json`、`orders.normalized.json` |
 
 跑完后想彻底清理：
 
@@ -470,7 +478,7 @@ python -m mcd_timemachine all
 # 看原始返回（排查用，含隐私）
 python -m mcd_timemachine inspect orders
 
-# 导出脱敏结构（可安全分享）
+# 导出脱敏结构（分享前仍需人工检查）
 python -m mcd_timemachine share
 
 # 打开报告

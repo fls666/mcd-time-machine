@@ -116,7 +116,7 @@ mcdtm doctor      # 输出 serverInfo、工具总数、order-list 的 inputSchem
 
 诊断结果写入 `mcdtm-output/doctor.json`。
 
-### 6.1 如何安全地反馈真实结构
+### 6.1 如何反馈真实结构（脱敏，但不承诺绝对安全）
 
 `doctor.json` 与 `mcdtm-output/raw/` 内含**真实订单号、金额、门店**，不能直接公开。
 请先导出脱敏版本：
@@ -137,6 +137,12 @@ mcdtm share       # 生成 mcdtm-output/share.json
 文件还附带 `suggested_mappings`，自动推断 order_id / order_time / order_amount /
 store / items_container / item_name / item_qty / item_price 对应的字段路径，
 据此即可直接补齐 `collector.py` 的候选表，无需改动上层分析逻辑。
+
+**关于「是否绝对安全」的如实说明**：脱敏会把所有值替换为类型与长度，
+并对产物做一次 PII 扫描（手机号 / 邮箱 / 身份证 / 银行卡 / URL / 24 位以上长串 / 6 位以上数字），
+命中项替换为占位符，命中类型记录在 `pii_scan.hits`。
+但它**无法穷举所有未知字段与自定义格式**，因此定位是「大幅降低风险的排障材料」，
+而非「可以闭眼公开的文件」——公开前请人工通读一遍。
 
 > 实现见 `mcd_timemachine/share.py`，脱敏逻辑有 14 条单元测试守卫
 > （`tests/test_share.py`），确保真实值不会泄漏进产物。

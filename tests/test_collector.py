@@ -184,5 +184,178 @@ class TestCoverage(unittest.TestCase):
         self.assertEqual(cov["range_start"], "")
 
 
+class AmountSourceTest(unittest.TestCase):
+    """实付金额与商品估算必须区分，避免年度消费失真。"""
+
+    def test_actual_amount_preferred(self):
+        payload = {"data": {"list": [
+            _order("A1", "2026-03-01 12:00", 38.5,
+                   [{"productName": "巨无霸", "quantity": 1, "price": 24.0}])
+        ]}}
+        orders = normalize_orders(extract_records(payload))
+        self.assertEqual(orders[0]["amount_source"], "actual")
+        self.assertEqual(orders[0]["total"], 38.5)
+
+    def test_missing_amount_marked_as_estimated(self):
+        payload = {"data": {"list": [{
+            "orderId": "E1", "orderTime": "2026-03-02 12:00",
+            "items": [{"productName": "薯条", "quantity": 2, "price": 12.5}],
+        }]}}
+        orders = normalize_orders(extract_records(payload))
+        self.assertEqual(orders[0]["amount_source"], "estimated")
+        self.assertEqual(orders[0]["total"], 25.0)
+
+    def test_no_amount_and_no_items_is_unknown(self):
+        payload = {"data": {"list": [
+            {"orderId": "U1", "orderTime": "2026-03-03 12:00"}
+        ]}}
+        orders = normalize_orders(extract_records(payload))
+        self.assertEqual(orders[0]["amount_source"], "unknown")
+        self.assertIsNone(orders[0]["total"])
+
+    def test_coverage_reports_estimation(self):
+        orders = [
+            {"total": 10.0, "amount_source": "actual", "date": "2026-01-01", "items": []},
+            {"total": 20.0, "amount_source": "estimated", "date": "2026-01-02", "items": []},
+        ]
+        cov = build_coverage("mcp", 1, 2, orders)
+        self.assertEqual(cov["actual_amount_orders"], 1)
+        self.assertEqual(cov["estimated_amount_orders"], 1)
+        self.assertTrue(any("估算" in w for w in cov["warnings"]))
+
+
+class SchemaPagingTest(unittest.TestCase):
+    """按服务端 inputSchema 精确匹配分页参数，而不是瞎猜。"""
+
+    def test_shapes_derived_from_schema(self):
+        from mcd_timemachine.collector import _paging_shapes_from_schema
+
+        schema = {"properties": {"pageNo": {}, "pageSize": {}}}
+        self.assertEqual(_paging_shapes_from_schema(schema), [("pageNo", "pageSize")])
+
+    def test_schema_with_cursor_is_preferred(self):
+        from mcd_timemachine.collector import _paging_shapes_from_schema
+
+        schema = {"properties": {"cursor": {}, "pageSize": {}, "pageNo": {}}}
+        shapes = _paging_shapes_from_schema(schema)
+        self.assertEqual(shapes[0], ("cursor", "pageSize"))
+
+    def test_empty_schema_falls_back(self):
+        from mcd_timemachine.collector import _paging_shapes_from_schema
+
+        self.assertEqual(_paging_shapes_from_schema({}), [])
+        self.assertEqual(_paging_shapes_from_schema(None), [])
+
+
+class FakeSchemaClient:
+    """带 list_tools 的假客户端，可指定返回体中的分页信号。"""
+
+    def __init__(self, pages, schema, signals=None):
+        self.pages = pages
+        self.schema = schema
+        self.signals = signals or {}
+        self.calls = []
+
+    def list_tools(self):
+        return [{"name": "order-list", "inputSchema": self.schema}]
+
+    def call_tool(self, name, arguments):
+        self.calls.append(dict(arguments))
+        page = int(arguments.get("pageNo", arguments.get("page", 1))) - 1
+        if page < 0 or page >= len(self.pages):
+            return {"data": {"list": []}}, ""
+        body = {"data": {"list": self.pages[page]}}
+        body.update(self.signals.get(page, {}))
+        return body, ""
+
+
+class CursorPagingTest(unittest.TestCase):
+    def test_cursor_drives_next_page(self):
+        """服务端给 nextCursor 时，必须带着游标翻下一页。"""
+        calls = []
+
+        class C:
+            def list_tools(self):
+                return [{"name": "order-list",
+                         "inputSchema": {"properties": {"cursor": {}, "pageSize": {}}}}]
+
+            def call_tool(self, name, arguments):
+                calls.append(dict(arguments))
+                cursor = arguments.get("cursor")
+                if cursor is None:
+                    return {"data": {"list": [_order("C1", "2026-01-01 12:00", 10.0, [])]},
+                            "nextCursor": "TOKEN2"}, ""
+                if cursor == "TOKEN2":
+                    return {"data": {"list": [_order("C2", "2026-01-02 12:00", 10.0, [])]}}, ""
+
+        records, meta = fetch_order_records(C(), max_pages=5, page_size=10)
+        self.assertEqual(len(records), 2)
+        self.assertEqual(meta["paging_mode"], "cursor")
+        self.assertEqual(calls[1].get("cursor"), "TOKEN2")
+
+    def test_total_hint_used_to_stop(self):
+        schema = {"properties": {"pageNo": {}, "pageSize": {}}}
+        pages = [[_order(f"T{j}", "2026-01-01 12:00", 10.0, [])] for j in range(4)]
+        client = FakeSchemaClient(pages, schema, signals={0: {"total": 2}})
+        records, meta = fetch_order_records(client, max_pages=10, page_size=1)
+        self.assertEqual(len(records), 2)
+        self.assertTrue(meta["coverage_confirmed"])
+        self.assertEqual(meta["total_hint"], 2)
+
+    def test_total_pages_respected(self):
+        schema = {"properties": {"pageNo": {}, "pageSize": {}}}
+        pages = [[_order(f"P{j}", "2026-01-01 12:00", 10.0, [])] for j in range(5)]
+        client = FakeSchemaClient(pages, schema, signals={0: {"totalPages": 2}})
+        records, meta = fetch_order_records(client, max_pages=10, page_size=1)
+        self.assertEqual(len(records), 2)
+        self.assertEqual(meta["stop_reason"], "exhausted")
+
+    def test_has_more_false_stops_and_confirms(self):
+        schema = {"properties": {"pageNo": {}, "pageSize": {}}}
+        pages = [[_order("H1", "2026-01-01 12:00", 10.0, [])]]
+        client = FakeSchemaClient(pages, schema, signals={0: {"hasMore": False}})
+        records, meta = fetch_order_records(client, max_pages=10, page_size=10)
+        self.assertEqual(len(records), 1)
+        self.assertTrue(meta["coverage_confirmed"])
+        self.assertEqual(meta["stop_reason"], "exhausted")
+
+
+class UnconfirmedCoverageTest(unittest.TestCase):
+    """整页重复时必须承认「未确认」，不能假装已经取完。"""
+
+    def test_duplicate_page_marks_unconfirmed(self):
+        class C:
+            def list_tools(self):
+                return [{"name": "order-list",
+                         "inputSchema": {"properties": {"pageNo": {}, "pageSize": {}}}}]
+
+            def call_tool(self, name, arguments):
+                # 服务端忽略分页参数，永远返回同一页
+                return {"data": {"list": [_order("D1", "2026-01-01 12:00", 10.0, [])]}}, ""
+
+        records, meta = fetch_order_records(C(), max_pages=5, page_size=10)
+        self.assertEqual(len(records), 1)
+        self.assertFalse(meta["coverage_confirmed"])
+        self.assertEqual(meta["stop_reason"], "duplicate")
+        self.assertTrue(any("未确认" in w for w in meta["warnings"]))
+
+    def test_max_pages_marks_unconfirmed(self):
+        schema = {"properties": {"pageNo": {}, "pageSize": {}}}
+        pages = [[_order(f"M{idx}-{j}", "2026-02-01 12:00", 10.0, []) for j in range(3)]
+                 for idx in range(10)]
+        client = FakeSchemaClient(pages, schema)
+        records, meta = fetch_order_records(client, max_pages=2, page_size=3)
+        self.assertTrue(meta["truncated"])
+        self.assertFalse(meta["coverage_confirmed"])
+        self.assertEqual(meta["stop_reason"], "max_pages")
+
+    def test_total_hint_mismatch_warns(self):
+        schema = {"properties": {"pageNo": {}, "pageSize": {}}}
+        pages = [[_order("W1", "2026-01-01 12:00", 10.0, [])]]
+        client = FakeSchemaClient(pages, schema, signals={0: {"total": 99, "hasMore": False}})
+        records, meta = fetch_order_records(client, max_pages=10, page_size=10)
+        self.assertTrue(any("未覆盖" in w for w in meta["warnings"]))
+
+
 if __name__ == "__main__":
     unittest.main()

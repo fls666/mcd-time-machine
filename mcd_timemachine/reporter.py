@@ -39,6 +39,14 @@ def _coverage_of(profile: Dict[str, Any]) -> Dict[str, Any]:
     return profile.get("coverage") or {}
 
 
+STOP_REASON_LABEL = {
+    "exhausted": "服务端已返回全部数据",
+    "last_page": "最后一页不满，判定已到底",
+    "duplicate": "翻页返回重复数据，服务端可能忽略分页参数",
+    "max_pages": "已达到分页上限",
+}
+
+
 def _coverage_lines(profile: Dict[str, Any]) -> List[str]:
     cov = _coverage_of(profile)
     total = cov.get("unique_orders", profile.get("summary", {}).get("total_orders", 0)) or 0
@@ -51,8 +59,19 @@ def _coverage_lines(profile: Dict[str, Any]) -> List[str]:
         f"有金额 {cov.get('with_amount', 0)}/{total}，"
         f"有明细 {cov.get('with_items', 0)}/{total}",
     ]
-    if cov.get("truncated"):
-        lines.append("覆盖范围   不完整：已达到分页上限，可能还有更多订单未统计")
+    if cov.get("source") == "demo":
+        lines.append("覆盖范围   示例数据由程序生成，仅用于演示输出效果")
+    elif cov.get("coverage_confirmed") is False:
+        lines.append(f"覆盖范围   未确认（{STOP_REASON_LABEL.get(cov.get('stop_reason', ''), '原因未知')}），"
+                     "统计可能不完整")
+    elif cov.get("coverage_confirmed"):
+        lines.append("覆盖范围   已确认（服务端已给出终止信号）")
+    est = cov.get("estimated_amount_orders", 0)
+    if est:
+        lines.append(
+            f"金额口径   实付 {cov.get('actual_amount_orders', 0)} 单，"
+            f"估算 {est} 单（估算 = 单价×数量，未含优惠券/配送费/退款）"
+        )
     for warn in cov.get("warnings", [])[:3]:
         lines.append(f"提示       {warn}")
     return lines
@@ -353,6 +372,17 @@ def render_html(profile: Dict[str, Any]) -> str:
     a(f"<div>有日期：<b>{cov.get('with_date', 0)}/{total}</b></div>")
     a(f"<div>有金额：<b>{cov.get('with_amount', 0)}/{total}</b></div>")
     a(f"<div>有明细：<b>{cov.get('with_items', 0)}/{total}</b></div>")
+    if cov.get("source") == "demo":
+        a("<div>覆盖范围：示例数据由程序生成，仅用于演示</div>")
+    elif cov.get("coverage_confirmed") is False:
+        a(f"<div class='warn'>覆盖范围<b>未确认</b>："
+          f"{_esc(STOP_REASON_LABEL.get(cov.get('stop_reason', ''), '原因未知'))}，"
+          "统计可能不完整。</div>")
+    est = cov.get("estimated_amount_orders", 0)
+    if est:
+        a(f"<div class='warn'>金额口径：实付 <b>{cov.get('actual_amount_orders', 0)}</b> 单，"
+          f"估算 <b>{est}</b> 单。估算按「单价 × 数量」计算，"
+          "未包含优惠券、配送费与退款，累计消费可能与实际支出有偏差。</div>")
     a("</div>")
     if cov.get("tools"):
         a("<table class='tools'>")

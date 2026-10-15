@@ -11,7 +11,7 @@ from mcd_timemachine.demo_data import generate
 
 
 def _mk(date: str, hour: int, items: List[Dict[str, Any]], total: float = None,
-        store: str = "测试餐厅"):
+        store: str = "测试餐厅", amount_source: str = "actual"):
     import datetime
 
     weekday = datetime.datetime.strptime(date, "%Y-%m-%d").weekday()
@@ -19,6 +19,7 @@ def _mk(date: str, hour: int, items: List[Dict[str, Any]], total: float = None,
     if amount is None:
         amount = sum((i.get("price") or 0) * (i.get("qty") or 1) for i in items)
     return {
+        "amount_source": amount_source,
         "order_id": f"{date}-{hour}",
         "time": f"{date} {hour:02d}:00",
         "date": date,
@@ -149,6 +150,128 @@ class TestEdgeCases(unittest.TestCase):
         shift = {s["category"]: s["delta"] for s in profile["taste_shift"]}
         self.assertGreater(shift["甜品"], 0)
         self.assertLess(shift["汉堡"], 0)
+
+
+class TestAmountBasis(unittest.TestCase):
+    """实付金额与估算金额必须分开统计，不能混算。"""
+
+    def _o(self, date, total, source, items=None):
+        return {
+            "order_id": date, "time": f"{date} 12:00", "date": date,
+            "hour": 12, "weekday": 0, "store": "测试餐厅", "channel": "堂食",
+            "total": total, "amount_source": source, "discount": 0,
+            "items": items or [{"name": "巨无霸", "qty": 1, "price": 24.0,
+                                "category": "汉堡"}],
+        }
+
+    def test_actual_and_estimated_not_mixed(self):
+        orders = [
+            self._o("2026-01-01", 100.0, "actual"),
+            self._o("2026-01-02", 900.0, "estimated"),
+        ]
+        s = analyze(orders)["summary"]
+        self.assertEqual(s["actual_spend"], 100.0)
+        self.assertEqual(s["estimated_spend"], 900.0)
+        # 主指标只认实际支付
+        self.assertEqual(s["display_spend"], 100.0)
+        self.assertEqual(s["spend_basis"], "mixed")
+        self.assertEqual(s["avg_order"], 100.0)
+
+    def test_total_spend_still_full_figure(self):
+        orders = [
+            self._o("2026-01-01", 100.0, "actual"),
+            self._o("2026-01-02", 900.0, "estimated"),
+        ]
+        s = analyze(orders)["summary"]
+        self.assertEqual(s["total_spend"], 1000.0)
+
+    def test_no_actual_falls_back_to_estimated(self):
+        orders = [self._o("2026-01-02", 30.0, "estimated")]
+        s = analyze(orders)["summary"]
+        self.assertEqual(s["display_spend"], 30.0)
+        self.assertEqual(s["spend_basis"], "estimated")
+
+    def test_orders_without_amount_counted(self):
+        orders = [
+            self._o("2026-01-01", 100.0, "actual"),
+            self._o("2026-01-02", None, "unknown"),
+        ]
+        s = analyze(orders)["summary"]
+        self.assertEqual(s["unknown_amount_orders"], 1)
+        self.assertEqual(s["actual_spend"], 100.0)
+
+    def test_unlabeled_amount_source_not_treated_as_actual(self):
+        order = self._o("2026-01-01", 50.0, "actual")
+        order.pop("amount_source")
+        s = analyze([order])["summary"]
+        self.assertEqual(s["actual_spend"], 0.0)
+        self.assertEqual(s["spend_basis"], "unlabeled")
+
+
+class TestTagConfidence(unittest.TestCase):
+    """标签必须用统一可信度排序，且不得为了凑数硬贴标签。"""
+
+    def _o(self, date, items, total=40.0):
+        return {
+            "order_id": date, "time": f"{date} 12:00", "date": date,
+            "hour": 12, "weekday": 0, "store": "测试餐厅", "channel": "堂食",
+            "total": total, "amount_source": "actual", "discount": 0,
+            "items": items,
+        }
+
+    def test_confidence_within_range(self):
+        orders = [self._o(f"2026-01-{d:02d}", [
+            {"name": "麦辣鸡腿堡", "qty": 2, "price": 22.0, "category": "汉堡"},
+            {"name": "薯条", "qty": 1, "price": 12.0, "category": "小食"},
+        ]) for d in range(1, 9)]
+        for tag in analyze(orders)["tags"]:
+            self.assertIn("confidence", tag)
+            self.assertTrue(0 <= tag["confidence"] <= 100)
+            self.assertIn("evidence", tag)
+
+    def test_no_padding_when_only_one_tag_qualifies(self):
+        # 只有咖啡类明显，其他品类都不达阈值
+        orders = [self._o(f"2026-01-{d:02d}", [
+            {"name": "拿铁", "qty": 1, "price": 18.0, "category": "饮料"},
+            {"name": "玉米杯", "qty": 1, "price": 8.0, "category": "沙拉"},
+        ]) for d in range(1, 9)]
+        tags = analyze(orders)["tags"]
+        self.assertEqual([t["tag"] for t in tags], ["咖啡续命"])
+
+    def test_tiny_data_shows_exploring(self):
+        orders = [self._o("2026-01-01", [
+            {"name": "玉米杯", "qty": 1, "price": 8.0, "category": "沙拉"},
+        ])]
+        profile = analyze(orders)
+        self.assertFalse(profile["data_sufficient"])
+        self.assertEqual([t["tag"] for t in profile["tags"]], ["口味探索中"])
+
+    def test_sorted_by_confidence_not_raw_score(self):
+        orders = [self._o(f"2026-01-{d:02d}", [
+            {"name": "麦辣鸡腿堡", "qty": 1, "price": 22.0, "category": "汉堡"},
+            {"name": "拿铁", "qty": 3, "price": 18.0, "category": "饮料"},
+        ]) for d in range(1, 9)]
+        tags = analyze(orders)["tags"]
+        confs = [t["confidence"] for t in tags]
+        self.assertEqual(confs, sorted(confs, reverse=True))
+
+
+class TestMemoryWording(unittest.TestCase):
+    """回忆文案不能使用未经证实的说法。"""
+
+    def test_titles_are_accurate(self):
+        orders = [
+            _mk("2026-01-01", 12, [{"name": "巨无霸", "qty": 1, "price": 24.0,
+                                    "category": "汉堡"}], total=24.0),
+            _mk("2026-06-01", 19, [{"name": "安格斯MAX厚牛堡", "qty": 2,
+                                    "price": 40.0, "category": "汉堡"}], total=80.0),
+        ]
+        titles = [m["title"] for m in analyze(orders)["memories"]]
+        self.assertIn("记录中的第一单", titles)
+        self.assertIn("最豪华的一单", titles)
+        self.assertNotIn("故事的起点", titles)
+        self.assertNotIn("最难忘的一单", titles)
+        self.assertNotIn("最沉迷的月份", titles)
 
 
 if __name__ == "__main__":

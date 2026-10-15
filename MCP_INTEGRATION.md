@@ -33,7 +33,7 @@ Token 只从环境变量读取（CLI 的 `--token` 仅作临时调试，不推�
 | `list-nutrition-foods` | 餐品营养信息列表 | 给推荐单品补上热量参考 |
 | `query-my-coupons` | 我的优惠券查询 | 预留：结合推荐结果提示可用券 |
 | `query-my-account` | 我的积分查询 | 预留：展示积分资产与年度积分流向 |
-| `campaign-calendar` | 活动日历查询 | 预留：把「最沉迷的月份」与当月营销活动对齐 |
+| `campaign-calendar` | 活动日历查询 | 预留：把「最常光顾的月份」与当月营销活动对齐 |
 | `mall-order-list` | 麦麦商城订单查询 | 预留：并入积分兑换侧的时间线 |
 
 调用映射见 `mcd_timemachine/mcp_client.py` 中的 `TOOLS` 常量。

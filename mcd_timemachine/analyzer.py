@@ -130,9 +130,39 @@ def analyze(
     # 不依赖调用方传入的顺序，内部统一按时间倒序，保证 first/last 判定正确
     orders = sorted(orders, key=lambda o: o.get("time") or "", reverse=True)
     dated = [o for o in orders if o.get("date")]
+
+    # ---- 金额口径：实际支付 / 商品估算 / 未标注 必须分开统计，不能混算
+    def _bucket(order: Dict[str, Any]) -> str:
+        src = order.get("amount_source")
+        return src if src in ("actual", "estimated") else "unlabeled"
+
+    def _sum_of(bucket: str) -> Tuple[float, int]:
+        values = [
+            o["total"] for o in orders
+            if isinstance(o.get("total"), (int, float)) and _bucket(o) == bucket
+        ]
+        return round(sum(values), 2), len(values)
+
+    actual_spend, actual_orders = _sum_of("actual")
+    estimated_spend, estimated_orders = _sum_of("estimated")
+    unlabeled_spend, unlabeled_orders = _sum_of("unlabeled")
+
     totals = [o["total"] for o in orders if isinstance(o.get("total"), (int, float))]
-    total_spend = sum(totals)
-    avg_order = total_spend / len(totals) if totals else 0.0
+    total_spend = round(sum(totals), 2)
+    unknown_amount_orders = len(orders) - len(totals)
+
+    if actual_orders:
+        # 只要有实际支付金额，主指标就只认实际支付，估算值不参与
+        display_spend = actual_spend
+        avg_order = actual_spend / actual_orders
+        spend_basis = "actual" if not (estimated_orders or unlabeled_orders) else "mixed"
+    else:
+        display_spend = round(estimated_spend + unlabeled_spend, 2)
+        priced_n = estimated_orders + unlabeled_orders
+        avg_order = display_spend / priced_n if priced_n else 0.0
+        spend_basis = "estimated" if estimated_orders else (
+            "unlabeled" if unlabeled_orders else "none"
+        )
 
     item_count: Counter = Counter()
     item_spend: defaultdict = defaultdict(float)
@@ -201,16 +231,17 @@ def analyze(
         first = dated[-1]
         first_item = first["items"][0]["name"] if first.get("items") else ""
         memories.append({
-            "title": "故事的起点",
-            "text": f"{first['date']}，你下了第一单"
+            "title": "记录中的第一单",
+            "text": f"{first['date']}，这是这段记录里最早的一单"
                     f"{('，' + first_item) if first_item else ''}。",
         })
     if priciest:
         names = "、".join(i["name"] for i in priciest.get("items", [])[:4]) or "若干好吃的"
+        amount_note = "" if priciest.get("amount_source") == "actual" else "（估算）"
         memories.append({
-            "title": "最难忘的一单",
-            "text": f"{priciest.get('date') or '某天'} 花了 {_money(priciest['total'])}，"
-                    f"点了 {names}。",
+            "title": "最豪华的一单",
+            "text": f"{priciest.get('date') or '某天'} 花了 {_money(priciest['total'])}"
+                    f"{amount_note}，点了 {names}。",
         })
     if biggest and biggest is not priciest and _qty(biggest) > 1:
         memories.append({
@@ -220,7 +251,7 @@ def analyze(
     if monthly_data:
         month, value = max(monthly_data.items(), key=lambda kv: kv[1]["orders"])
         memories.append({
-            "title": "最沉迷的月份",
+            "title": "最常光顾的月份",
             "text": f"{month} 你点了 {int(value['orders'])} 单，累计 {_money(value['spend'])}。",
         })
     if store_count:
@@ -251,31 +282,83 @@ def analyze(
     late_night = round(100 * night / max(len(dated), 1), 1)
     budget = avg_order > 0 and avg_order < 30
 
+    spicy_items = sum(q for n, q in item_count.items() if "辣" in n)
+    fries_items = sum(q for n, q in item_count.items()
+                      if "薯条" in n or "薯格" in n or "薯饼" in n)
+    coffee_items = sum(q for n, q in item_count.items()
+                       if "咖啡" in n or "拿铁" in n or "美式" in n)
+    breakfast_orders = slot_count.get("早餐", 0)
+    items_total = sum(item_count.values())
+
+    # 每个标签统一给出 0-100 的置信度，避免「百分比」与「金额」直接比较
+    def _confidence(score: float, threshold: float) -> int:
+        if threshold <= 0:
+            return 55
+        return max(0, min(100, int(round(50 + 50 * (score - threshold) / threshold))))
+
     candidates: List[Dict[str, Any]] = [
-        {"tag": "嗜辣星人", "threshold": 10, "score": spicy, "desc": f"{spicy}% 的单品带「辣」字"},
-        {"tag": "甜食主义", "threshold": 8, "score": sweet, "desc": f"甜品占了 {sweet}%"},
-        {"tag": "汉堡原教旨", "threshold": 18, "score": burger, "desc": f"汉堡占比 {burger}%"},
-        {"tag": "薯条依赖症", "threshold": 10, "score": fries, "desc": f"薯条类出现率 {fries}%"},
-        {"tag": "咖啡续命", "threshold": 7, "score": coffee, "desc": f"咖啡类占比 {coffee}%"},
-        {"tag": "早起干饭人", "threshold": 12, "score": breakfast, "desc": f"{breakfast}% 的订单在早餐时段"},
-        {"tag": "夜宵常客", "threshold": 12, "score": late_night, "desc": f"{late_night}% 的订单在 21 点后"},
+        {"tag": "嗜辣星人", "threshold": 10, "score": spicy,
+         "desc": f"{spicy}% 的单品带「辣」字",
+         "evidence": f"共 {items_total} 件单品，其中 {spicy_items} 件带「辣」字"},
+        {"tag": "甜食主义", "threshold": 8, "score": sweet,
+         "desc": f"甜品占了 {sweet}%",
+         "evidence": f"甜品累计 {category_count.get('甜品', 0)} 件，占全部单品 {sweet}%"},
+        {"tag": "汉堡原教旨", "threshold": 18, "score": burger,
+         "desc": f"汉堡占比 {burger}%",
+         "evidence": f"汉堡累计 {category_count.get('汉堡', 0)} 件，占全部单品 {burger}%"},
+        {"tag": "薯条依赖症", "threshold": 10, "score": fries,
+         "desc": f"薯条类出现率 {fries}%",
+         "evidence": f"薯条类累计 {fries_items} 件，占全部单品 {fries}%"},
+        {"tag": "咖啡续命", "threshold": 7, "score": coffee,
+         "desc": f"咖啡类占比 {coffee}%",
+         "evidence": f"咖啡类累计 {coffee_items} 件，占全部单品 {coffee}%"},
+        {"tag": "早起干饭人", "threshold": 12, "score": breakfast,
+         "desc": f"{breakfast}% 的订单在早餐时段",
+         "evidence": f"{len(dated)} 单中有 {breakfast_orders} 单发生在早餐时段"},
+        {"tag": "夜宵常客", "threshold": 12, "score": late_night,
+         "desc": f"{late_night}% 的订单在 21 点后",
+         "evidence": f"{len(dated)} 单中有 {night} 单发生在 21 点之后"},
     ]
     if budget:
+        # 分数是金额，与百分比不可比，单独给置信度并标记 comparable=False
         candidates.append(
             {"tag": "性价比猎手", "threshold": 0, "score": round(avg_order, 1),
-             "desc": f"平均客单价仅 {_money(avg_order)}"}
+             "desc": f"平均客单价仅 {_money(avg_order)}",
+             "evidence": f"{actual_orders or len(totals)} 单有金额记录，平均 {_money(avg_order)}",
+             "comparable": False,
+             "confidence": max(0, min(100, int(round(100 * (30 - avg_order) / 30))))}
         )
 
-    tags = [c for c in candidates if float(c["score"]) >= c["threshold"]]
-    tags.sort(key=lambda t: float(t["score"]), reverse=True)
-    if len(tags) < 3:
-        rest = sorted((c for c in candidates if c not in tags),
-                      key=lambda t: float(t["score"]), reverse=True)
-        tags.extend(rest[: 3 - len(tags)])
-    if not tags:
-        tags.append({"tag": "均衡派", "score": 100, "desc": "什么都来一点，不偏科"})
+    tags: List[Dict[str, Any]] = []
+    for cand in candidates:
+        score = float(cand["score"])
+        if score < cand["threshold"]:
+            continue
+        item = dict(cand)
+        item.setdefault("comparable", True)
+        item.setdefault("confidence", _confidence(score, cand["threshold"]))
+        tags.append(item)
+    # 先按置信度、再按是否可跨标签比较排序，最多保留 5 个
+    tags.sort(key=lambda t: (t["confidence"], t["comparable"]), reverse=True)
+    tags = tags[:5]
     for t in tags:
         t.pop("threshold", None)
+
+    # 数据量太少就不硬凑标签
+    data_sufficient = len(orders) >= 5 and items_total >= 8
+    if not tags:
+        if not data_sufficient:
+            tags = [{
+                "tag": "口味探索中", "score": 0, "confidence": 0, "comparable": True,
+                "desc": "数据量还太少，暂时看不出明显偏好",
+                "evidence": f"目前只有 {len(orders)} 单 / {items_total} 件单品",
+            }]
+        else:
+            tags = [{
+                "tag": "均衡派", "score": 100, "confidence": 50, "comparable": True,
+                "desc": "什么都来一点，没有明显偏科",
+                "evidence": f"覆盖了 {len(category_count)} 个品类，分布较均匀",
+            }]
 
     taste_shift = _compute_shift(dated, category_count)
     keywords = _build_keywords(
@@ -290,6 +373,13 @@ def analyze(
         "summary": {
             "total_orders": len(orders),
             "total_spend": round(total_spend, 2),
+            "display_spend": round(display_spend, 2),
+            "spend_basis": spend_basis,
+            "actual_spend": actual_spend,
+            "actual_amount_orders": actual_orders,
+            "estimated_spend": estimated_spend,
+            "estimated_amount_orders": estimated_orders,
+            "unknown_amount_orders": unknown_amount_orders,
             "avg_order": round(avg_order, 2),
             "total_items": int(total_items_qty),
             "first_date": dated[-1]["date"] if dated else "",
@@ -321,6 +411,7 @@ def analyze(
         "combos": [{"pair": f"{a} + {b}", "count": c} for (a, b), c in pair_count.most_common(5)],
         "memories": memories,
         "tags": tags,
+        "data_sufficient": data_sufficient,
         "keywords": keywords,
         "taste_shift": taste_shift,
         "recommendations": recommendations,

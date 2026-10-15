@@ -68,6 +68,9 @@ def generate(orders: int = 160, seed: int = 1024, days: int = 400) -> List[Dict[
                 "store": rng.choice(STORES),
                 "channel": rng.choice(CHANNELS),
                 "total": total,
+                # 示例数据的 total 是按单价×数量另加配送费算出来的，
+                # 语义上代表「实际支付金额」，与真实数据的 actual 口径一致
+                "amount_source": "actual",
                 "discount": rng.choice([0, 3, 5, 8]),
                 "items": items,
             }

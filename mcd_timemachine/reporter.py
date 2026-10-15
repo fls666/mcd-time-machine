@@ -21,6 +21,26 @@ SOURCE_LABEL = {
     "unknown": "来源未知",
 }
 
+SPEND_BASIS_LABEL = {
+    "actual": "均为已确认的实际支付金额",
+    "mixed": "以实际支付金额为主",
+    "estimated": "全部为按单价×数量估算的商品金额",
+    "unlabeled": "金额口径未被标注",
+    "none": "没有任何金额记录",
+}
+
+
+def _spend_note(summary: Dict[str, Any]) -> str:
+    """把金额口径讲清楚：实付 / 估算 / 缺失各多少。"""
+    basis = summary.get("spend_basis", "none")
+    parts = [SPEND_BASIS_LABEL.get(basis, "")]
+    if summary.get("estimated_amount_orders"):
+        parts.append(f"{summary['estimated_amount_orders']} 单为估算值")
+    if summary.get("unknown_amount_orders"):
+        parts.append(f"{summary['unknown_amount_orders']} 单无金额")
+    parts = [p for p in parts if p]
+    return "（" + "，".join(parts) + "）" if parts else ""
+
 
 def _esc(text: Any) -> str:
     return html.escape(str(text if text is not None else ""))
@@ -95,7 +115,7 @@ def print_console(profile: Dict[str, Any]) -> None:
 
     s = profile["summary"]
     print(f"订单总数   {s['total_orders']} 单")
-    print(f"累计消费   ¥{s['total_spend']:,.2f}")
+    print(f"累计消费   ¥{s['display_spend']:,.2f}  {_spend_note(s)}")
     print(f"平均客单   ¥{s['avg_order']:,.2f}")
     print(f"单品总数   {s['total_items']} 件")
     print(f"最长连续   {s['best_streak']} 天")
@@ -108,7 +128,12 @@ def print_console(profile: Dict[str, Any]) -> None:
 
     print("-- 口味画像 ----------------------------------------------------")
     for tag in profile["tags"]:
-        print(f"  {tag['tag']:<8} {_bar(float(tag['score']), 100):<24} {tag['desc']}")
+        conf = int(tag.get("confidence", 0))
+        print(f"  {tag['tag']:<8} 可信度 {conf:>3}%  {_bar(conf, 100, 16):<16} {tag['desc']}")
+        if tag.get("evidence"):
+            print(f"  {'':<8} 依据：{tag['evidence']}")
+    if not profile.get("data_sufficient", True):
+        print("  注：数据量较少，画像仅供参考")
     print()
 
     if profile.get("taste_shift"):
@@ -182,7 +207,7 @@ def render_markdown(profile: Dict[str, Any]) -> str:
     w("| 指标 | 数值 |")
     w("| --- | --- |")
     w(f"| 订单总数 | {s['total_orders']} 单 |")
-    w(f"| 累计消费 | ¥{s['total_spend']:,.2f} |")
+    w(f"| 累计消费 | ¥{s['display_spend']:,.2f} {_spend_note(s)} |")
     w(f"| 平均客单价 | ¥{s['avg_order']:,.2f} |")
     w(f"| 单品总数 | {s['total_items']} 件 |")
     w(f"| 月均消费 | ¥{s['avg_per_month']:,.2f} |")
@@ -199,7 +224,11 @@ def render_markdown(profile: Dict[str, Any]) -> str:
     w("## 三、口味画像")
     w("")
     for tag in profile["tags"]:
-        w(f"- **{tag['tag']}**（{tag['score']}）：{tag['desc']}")
+        w(f"- **{tag['tag']}**（可信度 {tag.get('confidence', 0)}%）：{tag['desc']}"
+          f"　—— 依据：{tag.get('evidence', '—')}")
+    if not profile.get("data_sufficient", True):
+        w("")
+        w("> 数据量较少，画像仅供参考。")
     w("")
 
     if profile.get("taste_shift"):
@@ -294,6 +323,16 @@ body{margin:0;padding:32px 16px;background:var(--bg);color:var(--ink);
 .kv b{color:var(--ink);font-weight:600;}
 .warn{margin-top:12px;font-size:12px;color:#9a5b00;background:#fff9ef;
  border:1px dashed #ffd9a8;border-radius:10px;padding:10px 12px;line-height:1.7;}
+.muted{margin-top:12px;font-size:12px;color:var(--sub);}
+.tagrow{margin:0 0 18px;}
+.tagrow-h{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;}
+.tagrow-h b{color:var(--red);font-size:15px;}
+.conf{font-size:12px;color:var(--sub);flex:none;}
+.tagbar{height:6px;background:#f2f2f2;border-radius:999px;overflow:hidden;margin:8px 0 6px;}
+.tagbar i{display:block;height:100%;border-radius:999px;
+ background:linear-gradient(90deg,var(--yellow),var(--red));}
+.tagdesc{font-size:13px;color:var(--ink);}
+.tagevid{font-size:12px;color:var(--sub);margin-top:4px;}
 .tags{display:flex;flex-wrap:wrap;gap:10px;}
 .tag{background:#fff8e6;border:1px solid #ffe1a6;color:#8a5a00;border-radius:999px;
  padding:8px 14px;font-size:13px;}
@@ -409,14 +448,17 @@ def render_html(profile: Dict[str, Any]) -> str:
     a('<div class="card"><h2>数字总览</h2><div class="stats">')
     for value, key in (
         (f"{s['total_orders']} 单", "订单总数"),
-        (f"¥{s['total_spend']:,.0f}", "累计消费"),
+        (f"¥{s['display_spend']:,.0f}", "累计消费"),
         (f"¥{s['avg_order']:.1f}", "平均客单价"),
         (f"{s['total_items']} 件", "单品总数"),
         (f"{s['best_streak']} 天", "最长连续打卡"),
     ):
         a(f"<div class='stat'><div class='v'>{_esc(value)}</div>"
           f"<div class='k'>{_esc(key)}</div></div>")
-    a("</div></div>")
+    a("</div>")
+    if _spend_note(s):
+        a(f"<div class='muted'>{_esc(_spend_note(s))}</div>")
+    a("</div>")
 
     if profile.get("keywords"):
         a('<div class="card"><h2>我的年度关键词</h2><div class="kw">')
@@ -424,10 +466,20 @@ def render_html(profile: Dict[str, Any]) -> str:
             a(f"<span>#{_esc(k['word'])}<i>{_esc(k['reason'])}</i></span>")
         a("</div></div>")
 
-    a('<div class="card"><h2>口味画像</h2><div class="tags">')
+    a('<div class="card"><h2>口味画像</h2>')
     for tag in profile["tags"]:
-        a(f"<span class='tag'><b>{_esc(tag['tag'])}</b> · {_esc(tag['desc'])}</span>")
-    a("</div></div>")
+        conf = int(tag.get("confidence", 0))
+        a("<div class='tagrow'>")
+        a(f"<div class='tagrow-h'><b>{_esc(tag['tag'])}</b>"
+          f"<span class='conf'>可信度 {conf}%</span></div>")
+        a(f"<div class='tagbar'><i style='width:{max(conf, 2)}%'></i></div>")
+        a(f"<div class='tagdesc'>{_esc(tag['desc'])}</div>")
+        if tag.get("evidence"):
+            a(f"<div class='tagevid'>依据：{_esc(tag['evidence'])}</div>")
+        a("</div>")
+    if not profile.get("data_sufficient", True):
+        a("<div class='warn'>数据量较少，画像仅供参考。</div>")
+    a("</div>")
 
     if profile.get("taste_shift"):
         a('<div class="card"><h2>这一年的口味变化</h2>')

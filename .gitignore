@@ -1,0 +1,25 @@
+# 输出目录：含真实订单数据，绝不入库
+mcdtm-output/
+output/
+*.local.json
+
+# 凭证
+.env
+.env.*
+*.token
+mcp-config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

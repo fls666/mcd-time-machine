@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcd-time-machine"
+version = "1.0.0"
+description = "麦麦时光机：基于麦当劳中国 MCP 的历史订单年度报告、口味画像与消费趋势分析工具"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "mcd-time-machine contributors" }]
+keywords = ["mcdonalds", "mcp", "model-context-protocol", "cli", "data-analysis"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/M-China/mcd-developer-innovation-challenge"
+Contest = "https://github.com/M-China/mcd-developer-innovation-challenge"
+
+[project.scripts]
+mcdtm = "mcd_timemachine.cli:main"
+
+[tool.setuptools]
+packages = ["mcd_timemachine"]

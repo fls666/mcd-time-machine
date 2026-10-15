@@ -67,7 +67,7 @@
 ### 1. 安装
 
 ```bash
-git clone https://github.com/<你的用户名>/mcd-time-machine.git
+git clone https://github.com/fls666/mcd-time-machine.git
 cd mcd-time-machine
 pip install -e .          # 或者直接用 python -m mcd_timemachine，无需安装
 ```

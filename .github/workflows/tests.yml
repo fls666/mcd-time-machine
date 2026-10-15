@@ -32,4 +32,27 @@ jobs:
           python -m mcd_timemachine demo --count 40 --out /tmp/mcdtm-ci
           test -f /tmp/mcdtm-ci/report.html
           test -f /tmp/mcdtm-ci/report.md
+          test -f /tmp/mcdtm-ci/story.html
           test -f /tmp/mcdtm-ci/provenance.json
+
+  # 故事页是纯前端产物，单元测试覆盖不到 DOM 行为。
+  # 这里用 jsdom 真跑一遍页面脚本，验证动效降级与分享卡片隐私默认值。
+  story:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install jsdom
+        run: npm install --no-save --no-audit --no-fund jsdom
+
+      - name: Generate story page
+        run: python -m mcd_timemachine demo --count 120 --out build
+
+      - name: Story page smoke test
+        run: node scripts/smoke_story.js build/story.html

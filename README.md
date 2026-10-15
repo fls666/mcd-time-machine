@@ -3,7 +3,7 @@
 > 把吃过的每一单，变成一份可分享的年度回忆、口味画像和消费趋势报告。
 
 基于 **麦当劳中国 MCP（Model Context Protocol）开放能力** 开发的 Skill + CLI 工具：读取你的历史订单，
-在本地完成统计与画像，输出一份终端简报 + Markdown 报告 + 一张可以直接发出去的 HTML 年度卡片。
+在本地完成统计与画像，输出一份终端简报 + Markdown 报告 + 完整 HTML 报告 + **V2.0 沉浸式年度故事页**（六章节滚动叙事 + 隐私友好竖版分享卡片）。
 
 **零第三方依赖**（只用 Python 标准库）；**数据不出本机**，不上传、不外传。
 
@@ -11,9 +11,10 @@
 
 ## 先看效果（不用装任何东西）
 
-- **示例年度报告（HTML）**：[docs/preview.html](./docs/preview.html) —— 直接在浏览器打开，单文件、离线可看
+- **示例年度故事页（V2.0，推荐先看这个）**：[docs/preview-story.html](./docs/preview-story.html) —— 单文件、离线可看，手机竖屏体验最佳，第 6 章可导出分享卡片
+- **示例年度报告（HTML）**：[docs/preview.html](./docs/preview.html) —— 完整数据版报告
 - **示例年度报告（Markdown）**：[docs/preview.md](./docs/preview.md)
-- **在线示例（GitHub Pages，直接点开即可）**：<https://fls666.github.io/mcd-time-machine/>
+- **在线示例（GitHub Pages，直接点开即可）**：<https://fls666.github.io/mcd-time-machine/>（首页即故事页，`report.html` 为完整报告）
 - 由 GitHub Actions 在每次主分支更新后自动重新生成并发布；
   若 Pages 不可用（例如仓库为私有、或 Source 未设为 GitHub Actions），
   工作流会自动跳过部署，改为在 Actions 运行页提供 `preview-report` 产物下载
@@ -90,6 +91,7 @@ mcdtm demo --count 160
 | `mcdtm tools` | 列出麦当劳 MCP 当前开放的工具，`*` 标记本工具会用到的 |
 | `mcdtm fetch` | 拉取历史订单（**自动翻页**）与菜单、营养、优惠券等增强数据 |
 | `mcdtm analyze` | 基于已拉取数据做分析并生成报告 |
+| `mcdtm story` | 用已有 `profile.json` 重新生成沉浸式故事页 `story.html`（不联网、不重算） |
 | `mcdtm all` | `fetch` + `analyze` |
 | `mcdtm inspect orders` | 打印某个工具的原始返回，便于核对字段结构（**含隐私，勿公开**） |
 | `mcdtm share` | 导出**脱敏**后的结构报告 `share.json`，供排障求助（公开前仍需人工过目） |
@@ -145,6 +147,55 @@ mcdtm demo --count 160
 
 ---
 
+## V2.0 沉浸式年度故事页（`story.html`）
+
+除了完整报告，每次分析还会产出一份面向手机竖屏的**六章节滚动故事**：
+
+| 章节 | 内容 |
+| --- | --- |
+| 1 时光机启动 | 年度标题、统计区间、订单 / 单品 / 跨度 / 连续打卡四个数字、来源徽章、「进入故事」按钮 |
+| 2 故事的起点 | 最早的一单 + 年度回忆时间轴 |
+| 3 我的麦麦日常 | 消费节奏、出没时段、一周节奏、品类偏好、常点单品、黄金搭档 |
+| 4 口味人格测试结果 | 口味标签 + 可信度进度条 + 数据依据 + 样本量说明 |
+| 5 这一年的变化 | 前后半程口味对比（含分组依据）、月度订单趋势、趣味记录 |
+| 6 年度终章 | 年度关键词、下次试试、分享卡片生成器、数据说明 |
+
+体验与工程上的取舍：
+
+- **动画只是增强**：章节正文由 Python 直接渲染进 HTML，JS 只负责渐显。
+  禁用 JS、JS 报错、或浏览器缺少 `IntersectionObserver` 时，六章内容依然完整可读；
+  系统开启「减少动态效果」（`prefers-reduced-motion`）时不做任何位移与渐变。
+- **移动端优先**：`svh` 高度兼容 iOS 地址栏收缩、底部安全区留白、
+  中文长串与长商品名用 `overflow-wrap: anywhere` 防止横向溢出。
+- **离线单文件**：CSS / JS / 数据全部内联，不请求任何网络资源，双击即开。
+- **模板与代码分离**：`assets/story.html`（骨架）、`assets/story.css`、`assets/story.js`
+  由 `mcd_timemachine/story.py` 注入数据组装，不再把 HTML / CSS / JS 堆在 `reporter.py` 里。
+
+### 隐私友好分享卡片
+
+第 6 章可生成 **1080 × 1920 竖版 PNG**（`share-card.png`），适配常见手机分享场景：
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| 消费金额 | **隐藏** | 勾选后才写入图片，未勾选画面显示「已隐藏」 |
+| 门店名称 | **隐藏** | 同上 |
+| 消费日期 | **隐藏** | 同上 |
+
+- 卡片由本机 Canvas 绘制并导出，**不含位置、账号等元数据**；
+- 未勾选的字段不会进入绘制文本，也不会写进「复制卡片配置」；
+- 页面左下角另有「隐私浏览」开关，可把故事页里的金额、门店与日期就地打码
+  （含年度回忆正文里的日期与金额，不只是统计卡）；
+- ⚠️ `story.html` **本身包含完整数据**，对外分享请发 PNG，不要直接转发 HTML 文件。
+
+前端行为有专门的冒烟测试守着（用 jsdom 真跑一遍页面脚本，覆盖增强与降级两条路径）：
+
+```bash
+npm install jsdom
+node scripts/smoke_story.js mcdtm-output/story.html
+```
+
+---
+
 ## 项目结构
 
 ```
@@ -153,11 +204,17 @@ mcd-time-machine/
 │   ├── mcp_client.py     # Streamable HTTP MCP 客户端（按 id 匹配响应、会话失效重建）
 │   ├── collector.py      # 分页采集 + Schema 容错归一化 + 覆盖率统计
 │   ├── analyzer.py       # 口味画像 / 趋势 / 关键词 / 回忆 / 推荐
-│   ├── reporter.py       # 终端简报 + Markdown + HTML 卡片
+│   ├── reporter.py       # 终端简报 + Markdown + 完整 HTML 报告
+│   ├── story.py          # V2.0 六章节故事页组装 + 分享卡片数据
+│   ├── assets/           # 故事页模板：story.html / story.css / story.js
 │   ├── demo_data.py      # 虚构示例数据生成器
 │   └── cli.py            # 命令行入口
-├── tests/                # 50+ 条 unittest 用例，零第三方依赖
+├── scripts/
+│   ├── windows_wizard.py # Windows 一键联调向导
+│   └── smoke_story.js    # 故事页前端冒烟测试（增强 / 降级双路径，需 jsdom）
+├── tests/                # 130+ 条 unittest 用例，零第三方依赖
 ├── docs/preview.html     # 示例年度报告（可直接在浏览器打开）
+├── docs/preview-story.html  # 示例年度故事页（V2.0）
 ├── skill/SKILL.md        # WorkBuddy Skill 定义（对话式使用）
 ├── MCP_INTEGRATION.md    # 用了哪些 MCP Tool、怎么调用、业务价值
 ├── CONTEST_DECLARATION.md
@@ -175,9 +232,13 @@ python -m unittest discover -s tests -v
 ```
 
 覆盖：空数据、缺金额/缺日期订单、重复订单去重、嵌套单品字段污染、
-分页终止与截断、边界日期、连续打卡、HTML 转义与结构闭合、示例数据确定性。
+分页终止与截断、边界日期、连续打卡、HTML 转义与结构闭合、示例数据确定性，
+以及故事页的六章结构、离线无外链、动效降级开关、隐私默认值与 JSON 转义。
 
-`push` / `pull_request` 时 GitHub Actions 会在 Python 3.9 ~ 3.13 上自动跑编译检查、单元测试与 demo 冒烟。
+`push` / `pull_request` 时 GitHub Actions 会在 Python 3.9 ~ 3.13 上自动跑编译检查、单元测试与 demo 冒烟，
+并额外起一个 `story` job：用 jsdom 加载 `story.html` 真跑一遍页面脚本
+（校验增强路径的渐显 / 章节导航 / 条形图，以及降级路径下内容仍完整可见、
+默认隐私字段不会进入卡片绘制）。
 
 ---
 

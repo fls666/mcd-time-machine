@@ -38,7 +38,10 @@ jobs:
         run: |
           python -m mcd_timemachine demo --count 160 --out build
           mkdir -p public
-          cp build/report.html public/index.html
+          # 首页放沉浸式故事页，完整报告与 Markdown 一并保留
+          cp build/story.html public/index.html
+          cp build/story.html public/story.html
+          cp build/report.html public/report.html
           cp build/report.md public/report.md
 
       - name: 检测 Pages 是否可用

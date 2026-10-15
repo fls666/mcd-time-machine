@@ -181,7 +181,30 @@ $ python -m compileall -q mcd_timemachine scripts
 样本量确实压低可信度）、分组 2 条（同日 10 单仍 6/6 均分、不足 6 单给出 reason）、
 推荐 4 条（规格归并、同款不同规格不重复推荐、同品类上限 2 个、理由不超过 1 个分号）。
 
-## 九、WorkBuddy 在项目中的实际作用
+## 九、第五轮审查后升级：V2.0 产品体验（分支 `feature/v2-story`）
+
+第五轮审查确认分析层问题已闭环（小样本保护、可信度与支撑量、金额标题、口味分组、推荐归一化、
+测试与 Pages 全绿），建议把「移动端沉浸式故事 + 隐私友好分享卡片」独立成一个开发阶段。
+据此在独立功能分支 `feature/v2-story` 上做展示层升级，数据分析层（`collector.py` / `analyzer.py`）本轮未改动。
+
+| 审查建议 | 实现 |
+| --- | --- |
+| 六章节滚动式年度故事 | `story.py` 渲染 6 个 `<section class="scene">`：时光机启动 / 故事的起点 / 我的麦麦日常 / 口味人格测试结果 / 这一年的变化 / 年度终章；右侧圆点导航 + 顶部进度条 |
+| 采用 CSS 渐显 + 原生 IntersectionObserver | 章节正文由 Python 直出，JS 只做增强；`.reveal` 默认可见，只有 `<html class="js">` 接管后才渐显；`prefers-reduced-motion` 下不做任何位移与渐变 |
+| 动画失效时内容仍完整可读 | 无 `IntersectionObserver` 或降低动效时，直接给所有 `.reveal` 加 `is-visible` 并移除渐显；`<noscript>` 明确提示内容可读 |
+| 移动端适配与中文换行 | `svh` 高度 + 安全区留白 + `overflow-wrap: anywhere`；`clamp()` 标题字号；`@media (max-width:380px)` 兜底 |
+| 隐私友好竖版分享卡片 | 第 6 章 Canvas 绘制 1080×1920 PNG；金额 / 门店 / 日期三项**默认隐藏**，未勾选字段不进入绘制文本，也不写入「复制卡片配置」 |
+| 不要继续把 HTML/CSS/JS 堆进 reporter.py | 拆分出 `assets/story.html`（骨架）、`assets/story.css`、`assets/story.js`，由 `story.py` 注入数据组装；`reporter.py` 保持只管完整报告 |
+| 保留原有报告 | `report.md` / `report.html` / `profile.json` 原样保留，新增 `story.html`；`mcdtm story` 可单独重刷故事页 |
+| 用独立分支与 PR 合并 | 分支 `feature/v2-story`，验收后再 PR 合入 `main`，不覆盖现有可用版本 |
+
+新增 `tests/test_story.py` 26 条（六章结构、标签闭合、无外链离线、隐私默认、JSON 转义防 `</script>` 逃逸、
+降级开关、卡片尺寸、空数据），单元测试 108 → **136 条**。
+另加 `scripts/smoke_story.js`：用 jsdom 真跑页面脚本，覆盖**增强路径**（渐显 / 圆点 / 条形图设宽）
+与**降级路径**（无 `IntersectionObserver` 时 36/36 内容仍可见），并断言默认状态下真实金额 / 门店 / 日期
+不会被画进图片；GitHub Actions 新增 `story` job 每次推送自动执行。
+
+## 十、WorkBuddy 在项目中的实际作用
 
 - **调研**：检索并归纳官方赛事规则与 29 个 MCP Tool 的能力边界，据此收敛选题
 - **架构设计**：分层设计（客户端 / 采集 / 分析 / 呈现 / 演示 / 可信度 / 排障）与容错策略
@@ -191,17 +214,21 @@ $ python -m compileall -q mcd_timemachine scripts
 - **工程化**：Windows 教程、一键向导、脱敏排障、CI 与 Pages 工作流
 - **参赛材料与发布**：README、MCP 集成说明、Skill 定义、git 初始化与推送
 
-## 十、证据边界（如实说明）
+## 十一、证据边界（如实说明）
 
 为免夸大，明确以下边界：
 
-1. **已完成**：示例数据全链路、108 条单元测试、CI 在 Python 3.9–3.13 上通过、编译检查通过。
+1. **已完成**：示例数据全链路、136 条单元测试、CI 在 Python 3.9–3.13 上通过、编译检查通过、
+   故事页前端冒烟（jsdom，增强与降级双路径）通过。
 2. **尚未完成**：**真实 MCP 联调需账号持有者本人执行**（WorkBuddy 没有用户的 Token，也不应索取）。
    在联调完成前，本项目不作「已通过真实环境验收」的表述。
    官方 `order-list` 描述为「查询**近期**订单」，服务端可能只返回有限条数，属接口范围而非本工具缺陷。
 3. **截图类证据**：WorkBuddy 无法自行截取会话界面。如需补充截图，可在本地按第四节的命令
    复现后自行截图附于 Issue，本文件的命令与产物可与之交叉验证。
-4. **本文件不含**任何真实 Token、密钥、订单号或个人敏感信息。
+4. **V2.0 前端的真实设备验收尚未完成**：滚动动效、真机竖屏布局、PNG 导出与分享流程
+   目前只经过 jsdom 逻辑级冒烟（含降级路径），未在真实手机浏览器上人工走查；
+   审查者可用 `mcdtm demo` 生成 `story.html` 后自行在手机上验证。
+5. **本文件不含**任何真实 Token、密钥、订单号或个人敏感信息。
 
 ---
 

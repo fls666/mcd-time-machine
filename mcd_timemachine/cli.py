@@ -6,7 +6,11 @@
     mcdtm fetch             通过 MCP 拉取真实订单与菜单数据（自动翻页）
     mcdtm analyze           分析并生成报告
     mcdtm all               fetch + analyze 一步到位
+    mcdtm story             用已有 profile.json 重新生成沉浸式故事页 story.html
     mcdtm inspect orders    查看某个工具的原始返回，便于排查字段
+
+每次分析都会产出三份同源文件：report.md（完整报告）、report.html（完整报告网页）、
+story.html（V2.0 六章节滚动故事 + 隐私友好分享卡片）。
 """
 
 from __future__ import annotations
@@ -73,6 +77,8 @@ def _run_analysis(
     print_console(profile)
     print()
     print(f"报告已生成：{paths['html']}  {paths['md']}")
+    if paths.get("story"):
+        print(f"沉浸式故事：{paths['story']}（手机竖屏浏览，第 6 章可导出分享卡片）")
 
 
 # ---------------------------------------------------------------- 子命令
@@ -170,6 +176,26 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_story(args: argparse.Namespace) -> int:
+    """用已生成的 profile.json 单独重刷故事页（不重新联网、不重新分析）。"""
+    out_dir: Path = args.out
+    profile_path = out_dir / "profile.json"
+    if not profile_path.exists():
+        print(f"找不到 {profile_path}。请先执行 `mcdtm analyze`（或 `mcdtm demo`）。")
+        return 1
+    try:
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"profile.json 解析失败：{exc}")
+        return 1
+    from .story import write_story
+
+    target = write_story(profile, out_dir)
+    print(f"已生成 {target}")
+    print("提示：story.html 内含完整数据，对外分享请用页面第 6 章导出的 share-card.png。")
+    return 0
+
+
 def cmd_all(args: argparse.Namespace) -> int:
     rc = cmd_fetch(args)
     if rc != 0:
@@ -262,6 +288,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_analyze = sub.add_parser("analyze", parents=[common], help="分析并生成报告")
     p_analyze.set_defaults(func=cmd_analyze)
+
+    p_story = sub.add_parser(
+        "story", parents=[common],
+        help="用已有 profile.json 重新生成沉浸式故事页 story.html")
+    p_story.set_defaults(func=cmd_story)
 
     p_all = sub.add_parser("all", parents=[common], help="fetch + analyze")
     p_all.add_argument("--minimal", action="store_true", help="只拉订单")

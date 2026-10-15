@@ -25,6 +25,8 @@ description: 麦麦时光机。当用户想回顾自己的麦当劳消费历史�
 > **禁止**直接粘贴给用户、复制到对话里、或上传到任何公开渠道（含 Issue、讨论区、截图）。
 > 需要对外反馈结构时，只能运行 `mcdtm share` 生成脱敏后的 `share.json`，
 > 并**提醒用户自己先通读一遍**再决定是否分享——脱敏无法保证覆盖所有未知字段。
+> 同理：`story.html` 内嵌了完整订单统计结果，**对外分享只能发故事页里导出的 `share-card.png`**，
+> 不要直接转发 HTML 文件（`report.html` 亦同）。
 
 ### 第一步：拉数据
 
@@ -59,7 +61,8 @@ description: 麦麦时光机。当用户想回顾自己的麦当劳消费历史�
 
 ```bash
 mcdtm fetch      # 拉数据
-mcdtm analyze    # 生成 report.md / report.html / profile.json
+mcdtm analyze    # 生成 report.md / report.html / story.html / profile.json
+mcdtm story      # 只重刷沉浸式故事页（不联网、不重算）
 ```
 
 若用户只想看结论，可直接在对话里输出要点摘要，并提示 HTML 报告可截图分享。

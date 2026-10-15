@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .collector import _guess_category, build_coverage
 
@@ -23,6 +24,30 @@ SLOTS = [
 ]
 
 WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+
+# -------- 口味画像的样本量门槛
+# 低于这个量不做任何偏好判定，避免「1 单全是辣」就得出「嗜辣星人」
+MIN_TAG_ORDERS = 5
+MIN_TAG_ITEMS = 8
+# 达到这个订单数才认为样本充分，可信度不打折
+SAMPLE_FULL_ORDERS = 10
+
+# -------- 商品名称标准化：规格 / 包装 / 别名
+_SPEC_RE = re.compile(r"[（(【\[][^)）】\]]*[)）】\]]")
+_SPEC_WORDS_RE = re.compile(
+    r"(大份|中份|小份|加大|超大|双份|两份|三份|套餐|单人餐|双人餐|"
+    r"分享装|超值装|加量装|儿童餐|快乐儿童餐)"
+)
+_SIZE_SUFFIX_RE = re.compile(r"[xX×]\s*\d+$|\d+\s*(块|只|串|支)$")
+_ALIAS = {
+    "可口可乐": "可乐",
+    "零度可乐": "可乐",
+    "健怡可乐": "可乐",
+    "无糖可乐": "可乐",
+    "冰美式": "美式咖啡",
+    "拿铁": "咖啡拿铁",
+    "香辣鸡翅": "麦辣鸡翅",
+}
 
 # 麦当劳经典单品库（当菜单 Tool 未返回数据时的兜底推荐池）
 FALLBACK_MENU = [
@@ -296,76 +321,115 @@ def analyze(
             return 55
         return max(0, min(100, int(round(50 + 50 * (score - threshold) / threshold))))
 
-    candidates: List[Dict[str, Any]] = [
-        {"tag": "嗜辣星人", "threshold": 10, "score": spicy,
-         "desc": f"{spicy}% 的单品带「辣」字",
-         "evidence": f"共 {items_total} 件单品，其中 {spicy_items} 件带「辣」字"},
-        {"tag": "甜食主义", "threshold": 8, "score": sweet,
-         "desc": f"甜品占了 {sweet}%",
-         "evidence": f"甜品累计 {category_count.get('甜品', 0)} 件，占全部单品 {sweet}%"},
-        {"tag": "汉堡原教旨", "threshold": 18, "score": burger,
-         "desc": f"汉堡占比 {burger}%",
-         "evidence": f"汉堡累计 {category_count.get('汉堡', 0)} 件，占全部单品 {burger}%"},
-        {"tag": "薯条依赖症", "threshold": 10, "score": fries,
-         "desc": f"薯条类出现率 {fries}%",
-         "evidence": f"薯条类累计 {fries_items} 件，占全部单品 {fries}%"},
-        {"tag": "咖啡续命", "threshold": 7, "score": coffee,
-         "desc": f"咖啡类占比 {coffee}%",
-         "evidence": f"咖啡类累计 {coffee_items} 件，占全部单品 {coffee}%"},
-        {"tag": "早起干饭人", "threshold": 12, "score": breakfast,
-         "desc": f"{breakfast}% 的订单在早餐时段",
-         "evidence": f"{len(dated)} 单中有 {breakfast_orders} 单发生在早餐时段"},
-        {"tag": "夜宵常客", "threshold": 12, "score": late_night,
-         "desc": f"{late_night}% 的订单在 21 点后",
-         "evidence": f"{len(dated)} 单中有 {night} 单发生在 21 点之后"},
-    ]
-    if budget:
-        # 分数是金额，与百分比不可比，单独给置信度并标记 comparable=False
-        candidates.append(
-            {"tag": "性价比猎手", "threshold": 0, "score": round(avg_order, 1),
-             "desc": f"平均客单价仅 {_money(avg_order)}",
-             "evidence": f"{actual_orders or len(totals)} 单有金额记录，平均 {_money(avg_order)}",
-             "comparable": False,
-             "confidence": max(0, min(100, int(round(100 * (30 - avg_order) / 30))))}
-        )
+    def _label(conf: int) -> str:
+        if conf >= 75:
+            return "高"
+        if conf >= 55:
+            return "中"
+        return "低"
 
-    tags: List[Dict[str, Any]] = []
-    for cand in candidates:
-        score = float(cand["score"])
-        if score < cand["threshold"]:
-            continue
-        item = dict(cand)
-        item.setdefault("comparable", True)
-        item.setdefault("confidence", _confidence(score, cand["threshold"]))
-        tags.append(item)
-    # 先按置信度、再按是否可跨标签比较排序，最多保留 5 个
-    tags.sort(key=lambda t: (t["confidence"], t["comparable"]), reverse=True)
-    tags = tags[:5]
-    for t in tags:
-        t.pop("threshold", None)
+    # ---- 样本量检查必须放在标签计算「之前」：
+    # 样本不足时不做任何偏好判定，避免「1 单全是辣」就得出「嗜辣星人」
+    data_sufficient = len(orders) >= MIN_TAG_ORDERS and items_total >= MIN_TAG_ITEMS
+    # 样本越薄，可信度打折越狠（最低 6 折），避免小样本给出高可信度结论
+    sample_factor = max(0.0, min(1.0, len(orders) / SAMPLE_FULL_ORDERS))
+    confidence_scale = 0.6 + 0.4 * sample_factor
+    sample = {"orders": len(orders), "items": items_total}
 
-    # 数据量太少就不硬凑标签
-    data_sufficient = len(orders) >= 5 and items_total >= 8
-    if not tags:
-        if not data_sufficient:
-            tags = [{
-                "tag": "口味探索中", "score": 0, "confidence": 0, "comparable": True,
-                "desc": "数据量还太少，暂时看不出明显偏好",
-                "evidence": f"目前只有 {len(orders)} 单 / {items_total} 件单品",
-            }]
-        else:
+    tags: List[Dict[str, Any]]
+    if not data_sufficient:
+        tags = [{
+            "tag": "口味探索中", "score": 0, "confidence": 0, "comparable": True,
+            "confidence_label": "样本不足",
+            "desc": f"只有 {len(orders)} 单 / {items_total} 件单品，样本太少，先不下偏好结论",
+            "evidence": f"需要至少 {MIN_TAG_ORDERS} 单且 {MIN_TAG_ITEMS} 件单品才开始画像",
+            "sample": sample,
+        }]
+    else:
+        # support = 支撑该标签的绝对数量；min_support 是最小支撑量，防止个别订单就命中
+        candidates: List[Dict[str, Any]] = [
+            {"tag": "嗜辣星人", "threshold": 10, "score": spicy,
+             "support": spicy_items, "min_support": 3,
+             "desc": f"{spicy}% 的单品带「辣」字",
+             "evidence": f"共 {items_total} 件单品，其中 {spicy_items} 件带「辣」字"},
+            {"tag": "甜食主义", "threshold": 8, "score": sweet,
+             "support": category_count.get("甜品", 0), "min_support": 3,
+             "desc": f"甜品占了 {sweet}%",
+             "evidence": f"甜品累计 {category_count.get('甜品', 0)} 件，"
+                         f"占全部单品 {sweet}%"},
+            {"tag": "汉堡原教旨", "threshold": 18, "score": burger,
+             "support": category_count.get("汉堡", 0), "min_support": 3,
+             "desc": f"汉堡占比 {burger}%",
+             "evidence": f"汉堡累计 {category_count.get('汉堡', 0)} 件，"
+                         f"占全部单品 {burger}%"},
+            {"tag": "薯条依赖症", "threshold": 10, "score": fries,
+             "support": fries_items, "min_support": 3,
+             "desc": f"薯条类出现率 {fries}%",
+             "evidence": f"薯条类累计 {fries_items} 件，占全部单品 {fries}%"},
+            {"tag": "咖啡续命", "threshold": 7, "score": coffee,
+             "support": coffee_items, "min_support": 2,
+             "desc": f"咖啡类占比 {coffee}%",
+             "evidence": f"咖啡类累计 {coffee_items} 件，占全部单品 {coffee}%"},
+            {"tag": "早起干饭人", "threshold": 12, "score": breakfast,
+             "support": breakfast_orders, "min_support": 2,
+             "desc": f"{breakfast}% 的订单在早餐时段",
+             "evidence": f"{len(dated)} 单中有 {breakfast_orders} 单发生在早餐时段"},
+            {"tag": "夜宵常客", "threshold": 12, "score": late_night,
+             "support": night, "min_support": 2,
+             "desc": f"{late_night}% 的订单在 21 点后",
+             "evidence": f"{len(dated)} 单中有 {night} 单发生在 21 点之后"},
+        ]
+        if budget:
+            # 分数是金额，与百分比不可比，单独给置信度并标记 comparable=False
+            candidates.append(
+                {"tag": "性价比猎手", "threshold": 0, "score": round(avg_order, 1),
+                 "support": actual_orders or len(totals), "min_support": MIN_TAG_ORDERS,
+                 "desc": f"平均客单价仅 {_money(avg_order)}",
+                 "evidence": f"{actual_orders or len(totals)} 单有金额记录，"
+                             f"平均 {_money(avg_order)}",
+                 "comparable": False,
+                 "confidence": max(0, min(100, int(round(100 * (30 - avg_order) / 30))))}
+            )
+
+        tags = []
+        for cand in candidates:
+            score = float(cand["score"])
+            if score < cand["threshold"]:
+                continue
+            if int(cand.get("support", 0)) < int(cand.get("min_support", 0)):
+                continue  # 支撑样本太少，不贴这个标签
+            item = dict(cand)
+            item.setdefault("comparable", True)
+            raw_conf = item.get("confidence") or _confidence(score, cand["threshold"])
+            conf = max(0, min(100, int(round(raw_conf * confidence_scale))))
+            item["confidence"] = conf
+            item["confidence_label"] = _label(conf)
+            item["sample"] = sample
+            tags.append(item)
+        # 先按置信度、再按是否可跨标签比较排序，最多保留 5 个
+        tags.sort(key=lambda t: (t["confidence"], t["comparable"]), reverse=True)
+        tags = tags[:5]
+        for t in tags:
+            t.pop("threshold", None)
+            t.pop("support", None)
+            t.pop("min_support", None)
+
+        if not tags:
             tags = [{
                 "tag": "均衡派", "score": 100, "confidence": 50, "comparable": True,
+                "confidence_label": "中",
                 "desc": "什么都来一点，没有明显偏科",
                 "evidence": f"覆盖了 {len(category_count)} 个品类，分布较均匀",
+                "sample": sample,
             }]
 
-    taste_shift = _compute_shift(dated, category_count)
+    taste_shift, shift_basis = _compute_shift(dated, category_count)
     keywords = _build_keywords(
         item_count, category_count, slot_count, store_count, pair_count, tags
     )
     recommendations = _recommend(
-        item_count, category_count, _menu_pool(extras), _nutrition_map(extras)
+        item_count, category_count, _menu_pool(extras), _nutrition_map(extras),
+        orders=orders, shift=taste_shift,
     )
 
     return {
@@ -414,6 +478,7 @@ def analyze(
         "data_sufficient": data_sufficient,
         "keywords": keywords,
         "taste_shift": taste_shift,
+        "taste_shift_basis": shift_basis,
         "recommendations": recommendations,
         "coverage": coverage or build_coverage("unknown", 0, len(orders), orders),
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -422,24 +487,39 @@ def analyze(
 
 # ---------------------------------------------------------------- 故事化维度
 
-def _compute_shift(dated: List[Dict[str, Any]], category_count: Counter) -> List[Dict[str, Any]]:
-    """对比前后半程的品类占比变化，给出「这一年的口味变化」。"""
-    if len(dated) < 6:
-        return []
-    dates = sorted(o["date"] for o in dated)
-    mid = dates[len(dates) // 2]
+def _compute_shift(
+    dated: List[Dict[str, Any]], category_count: Counter
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """对比前后半程的品类占比变化，给出「这一年的口味变化」。
 
-    def _half(second: bool) -> Counter:
+    分组方式：先按完整时间（日期 + 时刻）升序排序，再按**订单序号**对半切。
+    不能按「中间日期」切 —— 大量订单挤在同一天时，前后两组会严重失衡甚至空组。
+    """
+    basis: Dict[str, Any] = {"method": "按订单序号对半", "available": False}
+    if len(dated) < 6:
+        basis["reason"] = f"需要至少 6 单，当前 {len(dated)} 单"
+        return [], basis
+
+    ordered = sorted(dated, key=lambda o: (o.get("time") or o.get("date") or ""))
+    mid = len(ordered) // 2
+    if mid == 0 or mid >= len(ordered):
+        basis["reason"] = "订单数不足，无法分成两组"
+        return [], basis
+
+    early_orders, late_orders = ordered[:mid], ordered[mid:]
+
+    def _counter(group: List[Dict[str, Any]]) -> Counter:
         counter: Counter = Counter()
-        for order in dated:
-            if (order["date"] >= mid) != second:
-                continue
+        for order in group:
             for item in order.get("items", []):
                 counter[item.get("category", "其他")] += item.get("qty") or 1
         return counter
 
-    early, late = _half(False), _half(True)
-    total_early, total_late = sum(early.values()) or 1, sum(late.values()) or 1
+    early, late = _counter(early_orders), _counter(late_orders)
+    total_early, total_late = sum(early.values()), sum(late.values())
+    if not total_early or not total_late:
+        basis["reason"] = "前后半程中有一半没有任何单品，无法比较"
+        return [], basis
 
     deltas = []
     for category in set(list(early) + list(late)):
@@ -454,7 +534,17 @@ def _compute_shift(dated: List[Dict[str, Any]], category_count: Counter) -> List
             }
         )
     deltas.sort(key=lambda d: abs(d["delta"]), reverse=True)
-    return deltas[:4]
+
+    basis.update(
+        {
+            "available": True,
+            "early_orders": len(early_orders),
+            "late_orders": len(late_orders),
+            "early_range": f"{early_orders[0]['date']} ~ {early_orders[-1]['date']}",
+            "late_range": f"{late_orders[0]['date']} ~ {late_orders[-1]['date']}",
+        }
+    )
+    return deltas[:4], basis
 
 
 def _build_keywords(
@@ -477,8 +567,10 @@ def _build_keywords(
     if slots:
         slot, cnt = slots[0]
         keywords.append({"word": f"{slot}档", "reason": f"{cnt} 单发生在这个时段"})
-    if tags:
-        keywords.append({"word": tags[0]["tag"], "reason": tags[0]["desc"]})
+    # 「口味探索中」是样本不足的提示，不是用户的口味关键词
+    real_tags = [t for t in tags if t.get("tag") not in ("口味探索中",)]
+    if real_tags:
+        keywords.append({"word": real_tags[0]["tag"], "reason": real_tags[0]["desc"]})
     if pair_count:
         (a, b), cnt = pair_count.most_common(1)[0]
         keywords.append({"word": f"{a}+{b}", "reason": f"这对组合同单出现 {cnt} 次"})
@@ -491,44 +583,149 @@ def _build_keywords(
 
 # ---------------------------------------------------------------- 推荐
 
+def _base_name(text: str) -> str:
+    """商品名标准化：去掉括号内容、规格词与数量后缀，归并别名。
+
+    这样「麦乐鸡(5块)」「麦乐鸡 大份」都会被认成已经吃过的「麦乐鸡」，
+    不会被当成新品重复推荐。
+    """
+    name = str(text or "")
+    name = _SPEC_RE.sub("", name)
+    name = _SIZE_SUFFIX_RE.sub("", name)
+    name = _SPEC_WORDS_RE.sub("", name)
+    # 归一：去掉所有空白与常见分隔符
+    name = "".join(name.split())
+    for ch in "()（）[]【】·・-—_":
+        name = name.replace(ch, "")
+    return _ALIAS.get(name, name)
+
+
 def _recommend(
     item_count: Counter,
     category_count: Counter,
     menu: List[Dict[str, str]],
     nutrition: Dict[str, Dict[str, Any]],
+    orders: Optional[List[Dict[str, Any]]] = None,
+    shift: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, str]]:
-    def _norm(text: str) -> str:
-        for ch in "()（）[]【】":
-            text = text.replace(ch, " ")
-        return "".join(text.split())
+    """推荐「还没点过」的单品。
 
-    eaten = {_norm(n) for n in item_count.keys()}
+    评分信号（可解释、不重复堆同一句话）：
+    - 品类偏好强度（占你订单的比例）
+    - 复购频率：该品类出现在多少单里
+    - 近期偏好：最近 1/3 订单里该品类的热度
+    - 口味变化：占比正在上升的品类
+    - 破圈：从没点过的品类
+    并做多样性控制：同一品类最多 2 个。
+    """
+    orders = orders or []
+    shift = shift or []
+
+    eaten_base = {_base_name(n) for n in item_count.keys()}
+    eaten_raw = {str(n) for n in item_count.keys()}
+
     pref = {c: q for c, q in category_count.most_common(3)}
     max_pref = max(pref.values()) if pref else 1
     top_category = list(pref)[0] if pref else ""
 
-    scored = []
+    # 复购频率：品类出现在多少单里
+    category_orders: Counter = Counter()
+    for order in orders:
+        cats = {i.get("category", "其他") for i in order.get("items", []) if i.get("name")}
+        for c in cats:
+            category_orders[c] += 1
+
+    # 近期偏好：最近 1/3 订单（按时间倒序后的前段）
+    recent_cats: Counter = Counter()
+    if orders:
+        recent_n = max(1, len(orders) // 3)
+        for order in sorted(orders, key=lambda o: o.get("time") or "", reverse=True)[:recent_n]:
+            for item in order.get("items", []):
+                recent_cats[item.get("category", "其他")] += item.get("qty") or 1
+
+    rising = {r["category"]: r["delta"] for r in shift if r.get("delta", 0) > 0}
+    # 只在「显著」时才引用这些信号，否则每条推荐都会说同一句废话
+    top_freq = {c for c, _ in category_orders.most_common(2)}
+    top_recent = {c for c, _ in recent_cats.most_common(2)}
+
+    def _stable_jitter(text: str) -> int:
+        # 稳定哈希，避免依赖 PYTHONHASHSEED 造成测试不稳定
+        return sum(ord(c) for c in text) % 7
+
+    scored: List[Dict[str, Any]] = []
     for item in menu:
-        name = item["name"]
-        if _norm(name) in eaten:
+        name = str(item.get("name") or "")
+        if not name:
             continue
-        score = pref.get(item["category"], 0) / max_pref * 60
-        if item["category"] == top_category:
-            score += 25
-        if "辣" in name and any("辣" in e for e in eaten):
-            score += 10
-        if item["category"] not in category_count:
+        base = _base_name(name)
+        if base in eaten_base or name in eaten_raw:
+            continue
+        # 吃过高度相似的同名商品（子串命中）也不再推荐
+        if any(base and (base in e or e in base) for e in eaten_base):
+            continue
+
+        category = item.get("category", "其他")
+        score = pref.get(category, 0) / max_pref * 55
+        # (优先级, 文案)：数字越小越优先，最终只取最有力的两条
+        signals: List[Tuple[int, str]] = []
+
+        if category == top_category and top_category:
+            score += 20
+            signals.append((2, f"「{category}」是你点得最多的品类，这一款还没试过"))
+        elif category in pref:
             score += 8
-        reason = f"你偏爱「{item['category']}」，这一款还没试过"
-        if item["category"] not in category_count:
-            reason = f"你从没点过「{item['category']}」，从这一款开始破圈"
+            signals.append((2, f"你偏爱「{category}」，这一款还没试过"))
+        else:
+            signals.append((6, f"这一款属于「{category or '其他'}」，你还没试过"))
+
+        freq = category_orders.get(category, 0)
+        if freq >= 3:
+            score += min(12, freq)
+        if category in top_freq and freq >= 3:
+            signals.append((3, f"这个品类你一共在 {freq} 单里点过"))
+
+        if category in top_recent:
+            score += 10
+            signals.append((4, "它出现在你最近的订单里"))
+
+        if category in rising:
+            score += 12
+            signals.append((1, f"「{category}」后半程占比上升了 {rising[category]} 个百分点"))
+
+        if category not in category_count:
+            score += 14
+            signals.append((0, f"你从没点过「{category}」，从这一款开始破圈"))
+
+        if "辣" in name and any("辣" in e for e in eaten_raw):
+            score += 8
+            signals.append((5, "和你常点的辣味对得上"))
+
+        score += _stable_jitter(name) * 0.5
+
+        signals.sort(key=lambda s: s[0])
+        reason = "；".join(text for _, text in signals[:2]) or "这一款你还没试过"
         energy = _lookup_energy(name, nutrition)
         if energy:
             reason += f"；约 {energy}"
-        scored.append({"name": name, "reason": reason, "score": round(score, 1)})
+        scored.append({"name": name, "reason": reason,
+                       "category": category, "score": round(score, 1)})
 
     scored.sort(key=lambda x: x["score"], reverse=True)
-    return scored[:6]
+
+    # 多样性：同一品类最多 2 个，且保证至少 1 个来自没吃过的品类
+    per_category: Counter = Counter()
+    picked: List[Dict[str, Any]] = []
+    for cand in scored:
+        if per_category[cand["category"]] >= 2:
+            continue
+        per_category[cand["category"]] += 1
+        picked.append(cand)
+        if len(picked) >= 6:
+            break
+
+    for cand in picked:
+        cand.pop("category", None)
+    return picked
 
 
 def _lookup_energy(name: str, nutrition: Dict[str, Dict[str, Any]]) -> str:

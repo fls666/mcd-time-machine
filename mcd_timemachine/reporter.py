@@ -23,17 +23,45 @@ SOURCE_LABEL = {
 
 SPEND_BASIS_LABEL = {
     "actual": "均为已确认的实际支付金额",
-    "mixed": "以实际支付金额为主",
+    "mixed": "只统计有实付记录的订单",
     "estimated": "全部为按单价×数量估算的商品金额",
     "unlabeled": "金额口径未被标注",
     "none": "没有任何金额记录",
 }
+
+# 标题随口径变化，避免「累计消费」四字让人误以为是全部订单的真实支出
+SPEND_BASIS_TITLE = {
+    "actual": "累计消费",
+    "mixed": "已记录实付金额",
+    "estimated": "商品金额估算",
+    "unlabeled": "消费金额（口径未标注）",
+    "none": "暂无金额数据",
+}
+
+
+def _spend_title(summary: Dict[str, Any]) -> str:
+    return SPEND_BASIS_TITLE.get(summary.get("spend_basis", "none"), "累计消费")
+
+
+def _spend_coverage(summary: Dict[str, Any]) -> str:
+    """金额覆盖率：有实付金额的单数 / 总单数。"""
+    total = summary.get("total_orders") or 0
+    if not total or summary.get("spend_basis") == "none":
+        return ""
+    covered = summary.get("actual_amount_orders") or 0
+    pct = round(100 * covered / total, 1)
+    if covered >= total:
+        return f"金额覆盖 {covered}/{total} 单"
+    return f"金额覆盖 {covered}/{total} 单（{pct}%）"
 
 
 def _spend_note(summary: Dict[str, Any]) -> str:
     """把金额口径讲清楚：实付 / 估算 / 缺失各多少。"""
     basis = summary.get("spend_basis", "none")
     parts = [SPEND_BASIS_LABEL.get(basis, "")]
+    coverage = _spend_coverage(summary)
+    if coverage:
+        parts.append(coverage)
     if summary.get("estimated_amount_orders"):
         parts.append(f"{summary['estimated_amount_orders']} 单为估算值")
     if summary.get("unknown_amount_orders"):
@@ -57,6 +85,16 @@ def _bar(value: float, maximum: float, width: int = 24, char: str = "#") -> str:
 
 def _coverage_of(profile: Dict[str, Any]) -> Dict[str, Any]:
     return profile.get("coverage") or {}
+
+
+def _shift_basis_text(profile: Dict[str, Any]) -> str:
+    """把「前后半程是怎么分的」讲清楚，便于核对。"""
+    basis = profile.get("taste_shift_basis") or {}
+    if not basis.get("available"):
+        return basis.get("method", "按订单序号对半")
+    return (f"{basis.get('method', '按订单序号对半')}；"
+            f"前半 {basis.get('early_orders', '?')} 单（{basis.get('early_range', '')}），"
+            f"后半 {basis.get('late_orders', '?')} 单（{basis.get('late_range', '')}）")
 
 
 STOP_REASON_LABEL = {
@@ -115,7 +153,7 @@ def print_console(profile: Dict[str, Any]) -> None:
 
     s = profile["summary"]
     print(f"订单总数   {s['total_orders']} 单")
-    print(f"累计消费   ¥{s['display_spend']:,.2f}  {_spend_note(s)}")
+    print(f"{_spend_title(s):<6} ¥{s['display_spend']:,.2f}  {_spend_note(s)}")
     print(f"平均客单   ¥{s['avg_order']:,.2f}")
     print(f"单品总数   {s['total_items']} 件")
     print(f"最长连续   {s['best_streak']} 天")
@@ -133,11 +171,12 @@ def print_console(profile: Dict[str, Any]) -> None:
         if tag.get("evidence"):
             print(f"  {'':<8} 依据：{tag['evidence']}")
     if not profile.get("data_sufficient", True):
-        print("  注：数据量较少，画像仅供参考")
+        print("  注：样本量低于门槛（至少 5 单且 8 件单品），已不下偏好结论")
     print()
 
     if profile.get("taste_shift"):
         print("-- 口味变化（前 / 后半程占比）------------------------------------")
+        print(f"  分组方式：{_shift_basis_text(profile)}")
         for row in profile["taste_shift"]:
             trend = "上升" if row["delta"] > 0 else ("下降" if row["delta"] < 0 else "持平")
             print(f"  {row['category']:<6} {row['early']:>5}%  ->  {row['late']:>5}%"
@@ -207,7 +246,7 @@ def render_markdown(profile: Dict[str, Any]) -> str:
     w("| 指标 | 数值 |")
     w("| --- | --- |")
     w(f"| 订单总数 | {s['total_orders']} 单 |")
-    w(f"| 累计消费 | ¥{s['display_spend']:,.2f} {_spend_note(s)} |")
+    w(f"| {_spend_title(s)} | ¥{s['display_spend']:,.2f} {_spend_note(s)} |")
     w(f"| 平均客单价 | ¥{s['avg_order']:,.2f} |")
     w(f"| 单品总数 | {s['total_items']} 件 |")
     w(f"| 月均消费 | ¥{s['avg_per_month']:,.2f} |")
@@ -224,15 +263,18 @@ def render_markdown(profile: Dict[str, Any]) -> str:
     w("## 三、口味画像")
     w("")
     for tag in profile["tags"]:
-        w(f"- **{tag['tag']}**（可信度 {tag.get('confidence', 0)}%）：{tag['desc']}"
+        w(f"- **{tag['tag']}**（可信度 {tag.get('confidence', 0)}%"
+          f"，{tag.get('confidence_label', '—')}）：{tag['desc']}"
           f"　—— 依据：{tag.get('evidence', '—')}")
     if not profile.get("data_sufficient", True):
         w("")
-        w("> 数据量较少，画像仅供参考。")
+        w("> 样本量低于门槛（至少 5 单且 8 件单品），本轮不下偏好结论。")
     w("")
 
     if profile.get("taste_shift"):
         w("## 四、这一年的口味变化")
+        w("")
+        w(f"> 分组方式：{_shift_basis_text(profile)}")
         w("")
         w("| 品类 | 前半程占比 | 后半程占比 | 变化 |")
         w("| --- | ---: | ---: | ---: |")
@@ -448,7 +490,7 @@ def render_html(profile: Dict[str, Any]) -> str:
     a('<div class="card"><h2>数字总览</h2><div class="stats">')
     for value, key in (
         (f"{s['total_orders']} 单", "订单总数"),
-        (f"¥{s['display_spend']:,.0f}", "累计消费"),
+        (f"¥{s['display_spend']:,.0f}", _spend_title(s)),
         (f"¥{s['avg_order']:.1f}", "平均客单价"),
         (f"{s['total_items']} 件", "单品总数"),
         (f"{s['best_streak']} 天", "最长连续打卡"),
@@ -471,18 +513,21 @@ def render_html(profile: Dict[str, Any]) -> str:
         conf = int(tag.get("confidence", 0))
         a("<div class='tagrow'>")
         a(f"<div class='tagrow-h'><b>{_esc(tag['tag'])}</b>"
-          f"<span class='conf'>可信度 {conf}%</span></div>")
+          f"<span class='conf'>可信度 {conf}%"
+          f"（{_esc(tag.get('confidence_label', '—'))}）</span></div>")
         a(f"<div class='tagbar'><i style='width:{max(conf, 2)}%'></i></div>")
         a(f"<div class='tagdesc'>{_esc(tag['desc'])}</div>")
         if tag.get("evidence"):
             a(f"<div class='tagevid'>依据：{_esc(tag['evidence'])}</div>")
         a("</div>")
     if not profile.get("data_sufficient", True):
-        a("<div class='warn'>数据量较少，画像仅供参考。</div>")
+        a("<div class='warn'>样本量低于门槛（至少 5 单且 8 件单品），"
+          "本轮不下偏好结论。</div>")
     a("</div>")
 
     if profile.get("taste_shift"):
         a('<div class="card"><h2>这一年的口味变化</h2>')
+        a(f"<div class='muted'>{_esc(_shift_basis_text(profile))}</div>")
         for row in profile["taste_shift"]:
             cls = "up" if row["delta"] > 0 else ("down" if row["delta"] < 0 else "")
             sign = "+" if row["delta"] > 0 else ""

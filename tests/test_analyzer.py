@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from collections import Counter
 from typing import Any, Dict, List
 
 from mcd_timemachine.analyzer import analyze
@@ -272,6 +273,145 @@ class TestMemoryWording(unittest.TestCase):
         self.assertNotIn("故事的起点", titles)
         self.assertNotIn("最难忘的一单", titles)
         self.assertNotIn("最沉迷的月份", titles)
+
+
+class TestSmallSampleGuard(unittest.TestCase):
+    """样本量检查必须先于标签计算：1 单全是辣也不能得出「嗜辣星人」。"""
+
+    def _o(self, date, items, hour=12):
+        import datetime
+        weekday = datetime.datetime.strptime(date, "%Y-%m-%d").weekday()
+        return {
+            "order_id": date, "time": f"{date} {hour:02d}:00", "date": date,
+            "hour": hour, "weekday": weekday, "store": "测试餐厅", "channel": "堂食",
+            "total": 40.0, "amount_source": "actual", "discount": 0, "items": items,
+        }
+
+    def test_single_spicy_order_not_tagged(self):
+        orders = [self._o("2026-01-01", [
+            {"name": "麦辣鸡腿堡", "qty": 2, "price": 22.0, "category": "汉堡"},
+            {"name": "麦辣鸡翅", "qty": 2, "price": 12.0, "category": "小食"},
+        ])]
+        profile = analyze(orders)
+        self.assertFalse(profile["data_sufficient"])
+        self.assertEqual([t["tag"] for t in profile["tags"]], ["口味探索中"])
+        self.assertEqual(profile["tags"][0]["confidence"], 0)
+
+    def test_below_item_threshold_not_tagged(self):
+        # 5 单但只有 6 件单品，仍低于 8 件门槛
+        orders = [self._o(f"2026-01-0{d}", [
+            {"name": "麦辣鸡腿堡", "qty": 1, "price": 22.0, "category": "汉堡"},
+        ]) for d in range(1, 6)]
+        profile = analyze(orders)
+        self.assertFalse(profile["data_sufficient"])
+        self.assertEqual([t["tag"] for t in profile["tags"]], ["口味探索中"])
+
+    def test_min_support_blocks_weak_tag(self):
+        # 只有 1 件咖啡，占比刚好过阈值，但支撑量不足，不应贴「咖啡续命」
+        with_coffee = [
+            {"name": "拿铁", "qty": 1, "price": 18.0, "category": "饮料"},
+            {"name": "巨无霸", "qty": 1, "price": 24.0, "category": "汉堡"},
+        ]
+        without_coffee = [
+            {"name": "麦香鱼", "qty": 1, "price": 18.0, "category": "汉堡"},
+            {"name": "麦乐鸡", "qty": 1, "price": 11.0, "category": "小食"},
+        ]
+        orders = [self._o("2026-01-01", with_coffee)]
+        orders += [self._o(f"2026-01-{d:02d}", without_coffee) for d in range(2, 9)]
+        names = [t["tag"] for t in analyze(orders)["tags"]]
+        self.assertNotIn("咖啡续命", names)
+
+    def test_sample_and_label_present(self):
+        orders = [self._o(f"2026-01-{d:02d}", [
+            {"name": "巨无霸", "qty": 1, "price": 24.0, "category": "汉堡"},
+            {"name": "薯条", "qty": 1, "price": 12.0, "category": "小食"},
+        ]) for d in range(1, 9)]
+        for tag in analyze(orders)["tags"]:
+            self.assertIn("sample", tag)
+            self.assertIn(tag["confidence_label"], ("高", "中", "低", "样本不足"))
+
+    def test_small_sample_lowers_confidence(self):
+        items = [
+            {"name": "巨无霸", "qty": 1, "price": 24.0, "category": "汉堡"},
+            {"name": "麦香鱼", "qty": 1, "price": 18.0, "category": "汉堡"},
+        ]
+        small = analyze([self._o(f"2026-01-{d:02d}", items) for d in range(5, 10)])
+        large = analyze([self._o(f"2026-{m:02d}-{d:02d}", items)
+                         for m in range(1, 5) for d in range(1, 6)])
+        get_burger = lambda p: next(t["confidence"] for t in p["tags"]
+                                    if t["tag"] == "汉堡原教旨")
+        self.assertLess(get_burger(small), get_burger(large))
+
+
+class TestShiftGrouping(unittest.TestCase):
+    """同一天大量订单时，前后半程不能失衡或空组。"""
+
+    def test_same_day_orders_split_evenly(self):
+        from mcd_timemachine.analyzer import _compute_shift
+
+        # 12 单里 10 单挤在同一天
+        dated = [{"date": "2026-03-01", "time": f"2026-03-01 {10 + i:02d}:00",
+                  "items": [{"name": "巨无霸", "qty": 1, "category": "汉堡"}]}
+                 for i in range(10)]
+        dated += [{"date": "2026-01-01", "time": "2026-01-01 12:00",
+                   "items": [{"name": "麦旋风", "qty": 1, "category": "甜品"}]},
+                  {"date": "2026-05-01", "time": "2026-05-01 12:00",
+                   "items": [{"name": "麦旋风", "qty": 1, "category": "甜品"}]}]
+        deltas, basis = _compute_shift(dated, Counter())
+        self.assertTrue(basis["available"])
+        self.assertEqual(basis["early_orders"], 6)
+        self.assertEqual(basis["late_orders"], 6)
+
+    def test_too_few_orders_returns_reason(self):
+        from mcd_timemachine.analyzer import _compute_shift
+
+        dated = [{"date": "2026-01-01", "time": "2026-01-01 12:00",
+                  "items": [{"name": "巨无霸", "qty": 1, "category": "汉堡"}]}]
+        deltas, basis = _compute_shift(dated, Counter())
+        self.assertEqual(deltas, [])
+        self.assertFalse(basis["available"])
+        self.assertIn("reason", basis)
+
+
+class TestRecommendation(unittest.TestCase):
+    """名称标准化与推荐多样性。"""
+
+    def test_base_name_normalizes_spec(self):
+        from mcd_timemachine.analyzer import _base_name
+
+        self.assertEqual(_base_name("麦乐鸡（5块）"), "麦乐鸡")
+        self.assertEqual(_base_name("麦乐鸡(5块)"), "麦乐鸡")
+        self.assertEqual(_base_name("巨无霸 大份"), "巨无霸")
+        self.assertEqual(_base_name("薯条 加大"), "薯条")
+        self.assertEqual(_base_name("可口可乐"), "可乐")
+
+    def test_spec_variant_not_recommended_as_new(self):
+        from mcd_timemachine.analyzer import _recommend
+
+        item_count = Counter({"麦乐鸡（5块）": 3})
+        menu = [{"name": "麦乐鸡", "category": "小食"},
+                {"name": "巨无霸", "category": "汉堡"}]
+        recs = _recommend(item_count, Counter({"小食": 3}), menu, {})
+        self.assertNotIn("麦乐鸡", [r["name"] for r in recs])
+
+    def test_at_most_two_per_category(self):
+        from mcd_timemachine.analyzer import _recommend
+
+        menu = ([{"name": f"汉堡{i}", "category": "汉堡"} for i in range(6)]
+                + [{"name": f"甜品{i}", "category": "甜品"} for i in range(3)])
+        recs = _recommend(Counter({"薯条": 5}), Counter({"小食": 5}), menu, {})
+        counts = Counter(r["name"][:2] for r in recs)
+        self.assertLessEqual(counts["汉堡"], 2)
+        self.assertLessEqual(counts["甜品"], 2)
+
+    def test_reasons_are_concise(self):
+        from mcd_timemachine.analyzer import _recommend
+
+        menu = [{"name": "麦旋风", "category": "甜品"},
+                {"name": "安格斯MAX厚牛堡", "category": "汉堡"}]
+        recs = _recommend(Counter({"薯条": 20}), Counter({"小食": 20}), menu, {})
+        for r in recs:
+            self.assertLessEqual(r["reason"].count("；"), 1)
 
 
 if __name__ == "__main__":

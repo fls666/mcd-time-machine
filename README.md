@@ -13,10 +13,10 @@
 
 - **示例年度报告（HTML）**：[docs/preview.html](./docs/preview.html) —— 直接在浏览器打开，单文件、离线可看
 - **示例年度报告（Markdown）**：[docs/preview.md](./docs/preview.md)
-- 仓库已配置 GitHub Actions 工作流，支持把示例报告发布到 GitHub Pages。
-  当前环境未启用 Pages（Free 账号的私有仓库不支持），工作流会自动跳过部署步骤，
-  改为在 Actions 运行页提供 `preview-report` 产物下载；仓库转公开并在
-  Settings → Pages 把 Source 设为 GitHub Actions 后，部署会自动恢复
+- **在线示例（GitHub Pages，直接点开即可）**：<https://fls666.github.io/mcd-time-machine/>
+- 由 GitHub Actions 在每次主分支更新后自动重新生成并发布；
+  若 Pages 不可用（例如仓库为私有、或 Source 未设为 GitHub Actions），
+  工作流会自动跳过部署，改为在 Actions 运行页提供 `preview-report` 产物下载
 
 > 示例报告由 `mcdtm demo` 用**虚构订单**生成，报告顶部有醒目的「示例数据」标识，不会被误认为真实消费记录。
 

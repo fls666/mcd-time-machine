@@ -78,10 +78,19 @@ if (!engine) {
 }
 
 let failures = 0;
+const failedLines = [];
+// GitHub Actions 注解：把失败明细写进 check 注解，
+// 这样在拿不到 job 日志（例如无仓库权限）时，仍能从 check-runs API / 页面看到失败原因。
+function ghaError(title, message) {
+  if (process.env.GITHUB_ACTIONS !== 'true') return;
+  const esc = String(message).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  console.log(`::error title=${title}::${esc}`);
+}
 function check(name, cond, extra) {
   const ok = !!cond;
-  if (!ok) failures++;
-  console.log((ok ? 'PASS  ' : 'FAIL  ') + TAG + name + (extra ? '  -> ' + extra : ''));
+  const line = (ok ? 'PASS  ' : 'FAIL  ') + TAG + name + (extra ? '  -> ' + extra : '');
+  if (!ok) { failures++; failedLines.push(line); }
+  console.log(line);
 }
 const url = (p) => pathToFileURL(path.resolve(p)).href;
 
@@ -247,13 +256,15 @@ async function downloadCard(page, savePath) {
   return suggested;
 }
 
+let engineVersion = '';
 (async () => {
   const browser = await engine.launch();
   const context = await browser.newContext({
     viewport: VIEWPORT, deviceScaleFactor: 3, isMobile: true, hasTouch: true,
   });
   const page = await context.newPage();
-  console.log(`引擎 ${ENGINE} ${browser.version()} · 视口 ${VIEWPORT.width}x${VIEWPORT.height}`);
+  engineVersion = browser.version();
+  console.log(`引擎 ${ENGINE} ${engineVersion} · 视口 ${VIEWPORT.width}x${VIEWPORT.height}`);
   const errors = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
@@ -463,8 +474,14 @@ async function downloadCard(page, savePath) {
   await browser.close();
   if (keepDir) console.log('\n导出样本已保存到：' + keepDir);
   console.log(failures === 0 ? '\n全部通过' : `\n${failures} 项失败`);
+  if (failures > 0) {
+    ghaError(`浏览器验收失败（${ENGINE} ${engineVersion}，${VP_LABEL}，${failures} 项）`,
+      failedLines.slice(0, 20).join('\n'));
+  }
   process.exit(failures === 0 ? 0 : 1);
 })().catch((e) => {
-  console.error('浏览器验收执行失败：' + (e && e.stack ? e.stack : e));
+  const detail = e && e.stack ? e.stack : String(e);
+  console.error('浏览器验收执行失败：' + detail);
+  ghaError(`浏览器验收执行异常（${ENGINE}）`, detail);
   process.exit(1);
 });

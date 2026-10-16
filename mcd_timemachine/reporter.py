@@ -621,11 +621,18 @@ def write_reports(profile: Dict[str, Any], out_dir: Path,
     json_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
 
     paths = {"md": md_path, "html": html_path, "json": json_path}
-    # 故事页依赖可选资源，失败时不影响既有报告的产出
+    # 故事页依赖可选资源，失败时不影响既有报告的产出。
+    # 但「脱敏自检未通过 / 公开版内容不完整」是**必须让人看见的失败**：
+    # 一旦被这里的兜底吞掉，用户只会看到「报告已生成」，
+    # 却不知道公开版压根没产出（fail-closed 最怕的失效方式就是静默）。
     try:
-        from .story import write_story
-
+        from .story import PublicContentError, PrivacyLeakError, write_story
+    except Exception:  # pragma: no cover - 仅资源缺失等异常场景
+        return paths
+    try:
         paths["story"] = write_story(profile, out_dir, privacy)
+    except (PrivacyLeakError, PublicContentError):
+        raise
     except Exception:  # pragma: no cover - 仅资源缺失等异常场景
         pass
     return paths

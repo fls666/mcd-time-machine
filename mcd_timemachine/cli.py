@@ -15,6 +15,10 @@ story.html（V2.0 六章节滚动故事 + 隐私友好分享卡片）。
 story.html 有两种生成模式，用 `--privacy` 选择：
     personal（默认）个人完整版：保留金额 / 门店 / 日期，页面另有「隐私浏览」临时遮挡开关；
     public          公开分享版：金额 / 门店名 / 到日日期在生成时就从 HTML 里移除，可直接分享。
+
+公开版是 fail-closed 的：生成之后会跑两道检查——脱敏自检（成品里是否还有敏感值残留）
+与内容完整性检查（章节 / 计数是否被误抹）。任一项不通过就**直接报错、不写出文件**
+（退出码 3 = 脱敏自检未过，4 = 内容完整性未过），而不是悄悄替换后继续输出。
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ from .demo_data import generate
 from .mcp_client import DEFAULT_ENDPOINT, McpClient, McpError, TOOLS
 from .reporter import print_console, write_reports
 from .share import write_share
-from .story import PRIVACY_MODES
+from .story import PRIVACY_MODES, PublicContentError, PrivacyLeakError
 
 DEFAULT_OUT = Path("mcdtm-output")
 
@@ -91,6 +95,8 @@ def _run_analysis(
 def _print_privacy_hint(privacy: str) -> None:
     if privacy == "public":
         print("生成模式：公开分享版 —— 金额、门店名称、到日日期已在生成时移除，本文件可直接分享。")
+        print("已通过两道检查：脱敏自检（0 处敏感值残留）+ 内容完整性（章节与计数齐备）；"
+              "任一项不通过都不会写出文件。")
         print("注意：同目录的 report.html / report.md / profile.json 仍含完整数据，不要一并发出。")
     else:
         print("生成模式：个人完整版 —— story.html 内含金额、门店与具体日期，请勿直接转发；")
@@ -343,6 +349,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
+    except PrivacyLeakError as exc:
+        # fail-closed：报错但不产出文件。诊断行里的值一律打码，
+        # 否则「报泄漏」本身又成了新的泄漏点。
+        print(f"[错误] {exc}", file=sys.stderr)
+        for line in exc.report():
+            print("        " + line, file=sys.stderr)
+        print("        已按 fail-closed 策略放弃输出：目录里不会出现这份公开版，"
+              "若原本存在同名文件，那是上一次生成的结果。", file=sys.stderr)
+        print("        排查方向：新增字段没被脱敏规则覆盖。可先用 "
+              "`mcdtm story --privacy personal` 生成个人完整版自查，"
+              "并把上面（已打码的）命中行反馈给作者。", file=sys.stderr)
+        return 3
+    except PublicContentError as exc:
+        print(f"[错误] {exc}", file=sys.stderr)
+        for line in exc.report():
+            print("        " + line, file=sys.stderr)
+        print("        这是「隐私保护过度」而不是泄漏：脱敏可能把与金额 / 门店 / 日期无关的"
+              "内容也抹掉了，因此同样不下发文件，以免你分享出一份残缺的页面。", file=sys.stderr)
+        return 4
     except McpError as exc:
         print(f"[错误] {exc}", file=sys.stderr)
         return 2

@@ -21,6 +21,7 @@ HTML 骨架、CSS、JS 分别放在 `assets/story.html`、`assets/story.css`、`
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -58,44 +59,68 @@ PRIVACY_DEFAULTS = {"amount": False, "store": False, "date": False, "generated":
 # 字段名里出现这些词（按 snake_case / 驼峰切分后比对单词，中文按包含判断）
 # 即整字段置占位符。
 _SENSITIVE_WORDS = frozenset({
-    "addr", "address", "detail", "detailaddress", "position", "location",
+    "addr", "address", "street", "detail", "detailaddress", "position", "location",
     "id", "no", "code", "sn", "orderid", "orderno", "ordercode", "ordersn",
     "phone", "mobile", "tel", "telephone", "contact",
-    "lat", "lng", "lon", "latitude", "longitude", "geo", "gps",
+    "lat", "lng", "lon", "latitude", "longitude", "geo", "gps", "ip",
     "openid", "unionid", "userid", "uid", "member", "memberid", "cardno",
     "invoice", "taxno", "transaction", "paymentid", "imei", "idfa", "deviceid",
     "password", "passwd", "secret", "token", "credential", "cookie", "session",
+    "receiver", "recipient", "consignee", "realname", "username", "fullname",
+    "nickname", "email", "mail", "wechat", "idcard", "certno", "bankcard",
+    "idno", "plateno", "carno",
 })
-_SENSITIVE_CJK = ("地址", "收货", "送达", "电话", "手机", "号码", "会员", "账号",
-                  "密码", "编号", "单号", "支付", "发票", "坐标", "定位", "经纬",
-                  "身份证", "设备", "地址")
+_SENSITIVE_CJK = ("地址", "住址", "收货", "收件", "送达", "寄送", "电话", "手机",
+                  "号码", "会员", "账号", "密码", "编号", "单号", "支付", "发票",
+                  "坐标", "定位", "经纬", "身份证", "证件", "银行卡", "邮箱",
+                  "设备", "姓名", "昵称", "微信", "买家")
+# 长词按「包含」判定：addr2 / mobile1 / addressLine1 / phoneNumber 这类
+# 带后缀或连写的字段名，只按整词切分是漏的。短词（id / no / sn / tel / geo…）
+# 仍只按整词匹配，避免误伤。
+_SENSITIVE_PREFIX_WORDS = frozenset(w for w in _SENSITIVE_WORDS if len(w) >= 5)
 
-# 数值字段白名单：只有登记在这里的数值才允许出现在公开版。
-# 其余数值一律按金额处理（fail-closed）——将来新增金额字段时不必再改规则，
-# 而新增计数类字段会被 tests/test_story.py::TestRedactionRegistry 逼着登记。
-_SAFE_NUMBER_KEYS = frozenset({
-    # 计数
-    "total_orders", "total_items", "span_days", "best_streak",
-    "qty", "count", "orders", "items", "pages", "raw_records",
-    "unique_orders", "duplicates_removed", "early_orders", "late_orders",
-    "with_date", "with_amount", "with_items", "with_store",
-    "actual_amount_orders", "estimated_amount_orders", "unknown_amount_orders",
-    "orders_with_amount", "orders_with_date", "orders_with_items",
-    "truncated",
-    # 百分比 / 评分 / 可信度
-    "pct", "delta", "early", "late", "score", "confidence",
-})
+# 公开版字段策略：**显式**列出公开版允许展示的数值字段。
+#
+# 这是「允许清单」而不是「禁止清单」：没登记的一律按金额抹掉（fail-closed）。
+# 好处是新增金额字段无需再改规则，代价是新增计数类字段会被
+# tests/test_story.py::TestStructuredRedaction 逼着来这里登记一次——
+# 而这一次判断正是防止「隐私保护过度、把可读的统计也抹了」的闸门。
+PUBLIC_FIELD_POLICY = {
+    # 计数：保留原值，趋势图 / 条形图 / 关键数字全靠它们
+    "counts": (
+        "total_orders", "total_items", "span_days", "best_streak",
+        "qty", "count", "orders", "items", "pages", "raw_records",
+        "unique_orders", "duplicates_removed", "early_orders", "late_orders",
+        "with_date", "with_amount", "with_items", "with_store",
+        "actual_amount_orders", "estimated_amount_orders", "unknown_amount_orders",
+        "orders_with_amount", "orders_with_date", "orders_with_items",
+        "truncated",
+    ),
+    # 百分比 / 评分 / 可信度：保留原值
+    "ratios": ("pct", "delta", "early", "late", "score", "confidence"),
+}
+_SAFE_NUMBER_KEYS = frozenset(
+    key for group in PUBLIC_FIELD_POLICY.values() for key in group
+)
 
 # 字符串形态的金额字段（key 命中即整值置「金额已隐藏」）
 _MONEY_WORDS = frozenset({"spend", "amount", "price", "money", "cost", "fee",
-                          "paid", "payment", "pay", "outlay", "budget"})
-_MONEY_CJK = ("金额", "价格", "消费", "客单", "实付", "花费", "总价", "预算")
+                          "paid", "payment", "pay", "outlay", "budget",
+                          "expense", "expenditure", "refund", "discount",
+                          "rebate", "subtotal", "balance"})
+_MONEY_CJK = ("金额", "价格", "消费", "客单", "实付", "花费", "总价", "预算",
+              "费用", "退款", "折扣", "余额")
 # 名字里含金额词、但装的是计数或口径枚举，不能当金额抹掉
 _MONEY_WORDS_EXCEPT = frozenset({
     "spend_basis", "amount_source", "actual_amount_orders",
     "estimated_amount_orders", "unknown_amount_orders",
     "orders_with_amount", "with_amount",
 })
+# 这些后缀说明装的是计数 / 比例 / 口径，不是金额（refund_count / spend_pct …），
+# 避免「名字里有金额词就一律抹掉」把可读的统计也抹了。
+_NON_MONEY_SUFFIX = ("_pct", "_rate", "_ratio", "_count", "_basis", "_source", "_label")
+# 数值字段上更窄的一条：这几个后缀在语义上不可能是金额
+_NON_MONEY_NUMBER_SUFFIX = ("_pct", "_rate", "_ratio", "_count")
 
 _FIELD_ORDER = ("amount", "store", "date", "generated")
 _FIELD_LABELS = {
@@ -235,21 +260,38 @@ def _pv(text: Any, mask: str = _HIDDEN_TEXT) -> str:
     return f"<span class='pv' data-mask='{_attr(mask)}'>{_e(text)}</span>"
 
 
-_PV_MONEY_RE = re.compile(r"¥[\d,]+(?:\.\d+)?")
+_PV_MONEY_RE = re.compile(r"[¥￥][\d,]+(?:\.\d+)?")
 _PV_DATE_RE = re.compile(r"\d{4}-\d{2}(?:-\d{2})?")
+
+# 同一类信息的「其它常见写法」。既用于公开版的抹除（见下方 _VALUE_RULES），
+# 也用于个人版「隐私浏览」的临时打码（_mask_text）——两边共用，避免只在
+# 某一种写法上生效：审查提出的边界场景（英文日期、小数金额、全角符号）就属于这里。
+_ALT_DATE_RES = (
+    re.compile(r"(?<!\d)\d{4}[/.]\d{1,2}[/.]\d{1,2}(?!\d)"),           # 2026/06/27、2026.6.27
+    re.compile(r"(?<!\d)\d{1,2}[/-]\d{1,2}[/-]\d{4}(?!\d)"),           # 27/06/2026、06-27-2026
+    re.compile(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+               r"[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b"),     # June 27, 2026
+)
+_ALT_MONEY_RES = (
+    # RMB / CNY 前缀写法（不带 ¥ 符号也要认）
+    re.compile(r"\b(?:RMB|CNY|rmb|cny)\s*\d[\d,]*(?:\.\d{1,2})?"),
+)
 
 
 def _mask_text(text: Any, extra: str = "") -> str:
     """给正文里的金额与日期打上隐私标记。
 
     年度回忆的文案里散落着「2026-06-27 花了 ¥129.00」这类信息，
-    只标记stats 是不够的；这里统一补标，保证「隐私浏览」打开后全页不留具体数值。
+    只标记 stats 是不够的；这里统一补标（含全角 ￥ / RMB 前缀 / 英文日期等写法），
+    保证「隐私浏览」打开后全页不留具体数值。
     """
     out = _e(text)
     if extra:
         out = out.replace(_e(extra), _pv(extra), 1)
-    out = _PV_MONEY_RE.sub(lambda m: _pv(m.group(0)), out)
-    out = _PV_DATE_RE.sub(lambda m: _pv(m.group(0)), out)
+    for pattern in (_PV_MONEY_RE,) + _ALT_MONEY_RES:
+        out = pattern.sub(lambda m: _pv(m.group(0)), out)
+    for pattern in (_PV_DATE_RE,) + _ALT_DATE_RES:
+        out = pattern.sub(lambda m: _pv(m.group(0)), out)
     return out
 
 
@@ -272,46 +314,104 @@ _REDACT_FIELD = "已隐藏"
 
 _PV_DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 # 「地址：…」这类自由文本里的地址
-_ADDRESS_RE = re.compile(r"(?:收货|送达|配送)?地址\s*[：:]\s*[^<>，。；;、\n]{2,40}")
+_ADDRESS_RE = re.compile(r"(?:收货|送达|配送|寄送)?地址\s*[：:]\s*[^<>，。；;、\n]{2,40}")
+# 没有「地址：」标签也认得出的中文地址（省/市 + 区/县 + 街道门牌）
+_CN_ADDRESS_RE = re.compile(
+    r"[\u4e00-\u9fa5]{2,6}(?:省|市|自治区)[\u4e00-\u9fa5]{2,8}(?:区|县|市|镇)"
+    r"[\u4e00-\u9fa5A-Za-z0-9\-\s]{0,24}(?:路|街|道|巷|弄|号|栋|幢|楼|室|苑|园|小区|大厦|广场)")
 # 订单号形态：字母前缀 + 长数字（如 DEMO202606270001）
 _ORDER_ID_RE = re.compile(r"(?<![0-9A-Za-z])[A-Z]{2,}[0-9]{6,}(?![0-9A-Za-z])")
 # 8 位以上纯数字（订单号 / 手机号 / 身份证等）
 _LONG_DIGITS_RE = re.compile(r"(?<![0-9])\d{8,}(?![0-9])")
 # 带「元 / 块」后缀的金额（没有 ¥ 符号也要抹）
 _CNY_TEXT_RE = re.compile(r"\d[\d,]*(?:\.\d{1,2})?\s*(?:元|块钱|块)")
+# 裸数值形态（金额的各种格式化写法会落在这里，仅用于给报错分类）
+_BARE_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?%?")
 
-# 值级规则：数据层与 HTML 层共用同一套，避免两边规则漂移
+# 值级规则：数据层与 HTML 层共用同一套，避免两边规则漂移。
+# 注意：这些正则会被 sensitive_tokens() 用 findall 抽候选值，因此**不能有捕获组**。
 _VALUE_RULES = (
     (_PV_MONEY_RE, _REDACT_MONEY),
     (_PV_DAY_RE, _REDACT_DAY),
     (_ADDRESS_RE, _REDACT_ADDR),
+    (_CN_ADDRESS_RE, _REDACT_ADDR),
     (_ORDER_ID_RE, _REDACT_ID),
     (_LONG_DIGITS_RE, _REDACT_ID),
     (_CNY_TEXT_RE, _REDACT_MONEY),
-)
+) + tuple((p, _REDACT_MONEY) for p in _ALT_MONEY_RES) \
+  + tuple((p, _REDACT_DAY) for p in _ALT_DATE_RES)
 
 _KEY_SPLIT_RE = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff]+")
 _CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
 def _key_words(key: Any) -> frozenset:
-    """把字段名切成小写单词：`orderId` / `order_id` / `order-id` 都切成 order + id。"""
+    """把字段名切成小写单词：`orderId` / `order_id` / `order-id` 都切成 order + id。
+
+    同时剥掉单词尾部的数字：`addr2` → `addr`、`phone1` → `phone`。
+    带序号后缀的字段名（addr1/addr2、address_line2）在真实接口里很常见，
+    只看整词会把它们整片漏掉。
+    """
     raw = _CAMEL_RE.sub("_", str(key))
-    return frozenset(w.lower() for w in _KEY_SPLIT_RE.split(raw) if w)
+    words = set()
+    for word in _KEY_SPLIT_RE.split(raw):
+        if not word:
+            continue
+        word = word.lower()
+        words.add(word)
+        stripped = word.rstrip("0123456789")
+        if stripped and stripped != word:
+            words.add(stripped)
+    return frozenset(words)
+
+
+def _flat_key(key: Any) -> str:
+    """压平字段名：`addressLine1` → `addressline1`、`收货地址` → ``（中文走另一条判据）。"""
+    return re.sub(r"[^0-9a-z]", "", str(key).lower())
 
 
 def is_sensitive_key(key: Any) -> bool:
-    """字段名是否属于「一律不写入公开版」的敏感字段（地址 / 编号 / 联系方式…）。"""
+    """字段名是否属于「一律不写入公开版」的敏感字段（地址 / 编号 / 联系方式…）。
+
+    三条判据，逐层放宽：
+    1. 中文敏感词按包含判断（收货信息 / 身份证号）；
+    2. 切分后的整词命中（orderId → order + id）；
+    3. **较长**敏感词按包含判断（addressLine1 / phoneNumber / mobile1），
+       短词（id / no / sn / tel / geo）不参与，避免误伤。
+    """
     text = str(key)
     if any(part in text for part in _SENSITIVE_CJK):
         return True
-    return bool(_key_words(text) & _SENSITIVE_WORDS)
+    if _key_words(text) & _SENSITIVE_WORDS:
+        return True
+    flat = _flat_key(text)
+    return bool(flat) and any(word in flat for word in _SENSITIVE_PREFIX_WORDS)
+
+
+def is_safe_number_key(key: Any) -> bool:
+    """数值字段是否允许原样出现在公开版。
+
+    两条判据（满足其一即可）：
+    1. 显式登记在 `PUBLIC_FIELD_POLICY` 里 —— 这是主判据；
+    2. 字段名带明确的「非金额」后缀（`_pct` / `_rate` / `_ratio` / `_count`）——
+       这是本项目自己的命名约定，语义上不可能是金额，
+       用来避免「新增一个退款次数也要报错」这种过度脱敏。
+
+    两者都不满足的数值一律按金额抹掉（fail-closed）。
+    """
+    text = str(key)
+    if text in _SAFE_NUMBER_KEYS:
+        return True
+    return text.lower().endswith(_NON_MONEY_NUMBER_SUFFIX)
 
 
 def is_money_key(key: Any) -> bool:
-    """字符串形态的金额字段判定（数值字段走 _SAFE_NUMBER_KEYS 的白名单制）。"""
+    """字符串形态的金额字段判定（数值字段走 `is_safe_number_key` 的允许清单）。"""
     text = str(key)
     if text in _MONEY_WORDS_EXCEPT:
+        return False
+    low = text.lower()
+    if low.endswith(_NON_MONEY_SUFFIX):
         return False
     if any(part in text for part in _MONEY_CJK):
         return True
@@ -353,8 +453,8 @@ def _redact_node(node: Any, names: List[str]) -> Any:
             elif isinstance(value, bool) or value is None:
                 out[key] = value
             elif isinstance(value, (int, float)):
-                # 数值白名单之外一律按金额处理：新增金额字段无需再改规则
-                out[key] = value if name in _SAFE_NUMBER_KEYS else _REDACT_MONEY
+                # 允许清单之外一律按金额处理：新增金额字段无需再改规则
+                out[key] = value if is_safe_number_key(name) else _REDACT_MONEY
             elif is_money_key(name):
                 out[key] = _REDACT_MONEY
             else:
@@ -415,7 +515,7 @@ def sensitive_tokens(profile: Dict[str, Any]) -> List[str]:
     for key, value in _iter_scalars(profile):
         if value is None or isinstance(value, bool):
             continue
-        if isinstance(value, (int, float)) and key not in _SAFE_NUMBER_KEYS:
+        if isinstance(value, (int, float)) and not is_safe_number_key(key):
             # 渲染时可能出现的形式都算上：带千分位、带小数、以及带货币符号的
             variants = ("{:,.2f}", "{:.2f}", "{:,.1f}", "{:.1f}", "{:,}", "{}")
             for fmt in variants:
@@ -439,22 +539,202 @@ def scan_leaks(html: str, profile: Dict[str, Any]) -> List[str]:
     return [t for t in sensitive_tokens(profile) if t in html]
 
 
-def scrub_leaks(html: str, profile: Dict[str, Any]) -> Any:
-    """第三层兜底：把自检命中的残余值就地替换掉，返回 (html, 命中列表)。
+def _token_kind(token: str, profile: Dict[str, Any]) -> str:
+    text = str(token)
+    for name in store_names(profile):
+        if text == str(name):
+            return "门店名"
+    if any(p.fullmatch(text) for p in (_PV_MONEY_RE, _CNY_TEXT_RE) + _ALT_MONEY_RES):
+        return "金额"
+    if any(p.fullmatch(text) for p in (_PV_DAY_RE,) + _ALT_DATE_RES):
+        return "日期"
+    if _ORDER_ID_RE.fullmatch(text) or _LONG_DIGITS_RE.fullmatch(text):
+        return "编号/手机号"
+    if _CN_ADDRESS_RE.fullmatch(text) or _ADDRESS_RE.fullmatch(text):
+        return "地址"
+    if _BARE_NUMBER_RE.fullmatch(text):
+        return "数值（可能为金额）"
+    return "其它"
 
-    正常情况下命中列表为空（前两层已足够）。它不是「安全网」而是「报警器」：
-    真命中说明前两层有洞，测试里另有一条断言证明前两层单独就能做到零残留。
+
+def _mask_token(token: Any) -> str:
+    """报错信息里的值一律打码：**不能一边报泄漏、一边把敏感值又打到终端上**。"""
+    text = str(token)
+    if len(text) <= 2:
+        return "·" * len(text)
+    return text[:1] + "·" * (len(text) - 2) + text[-1:]
+
+
+class PrivacyLeakError(RuntimeError):
+    """公开版脱敏自检未通过 —— **拒绝输出**，而不是就地替换后继续写。
+
+    这是 fail-closed 策略：如果自检发现残留却只是悄悄替换，那么将来新增字段
+    或某条规则被改坏时，程序会把漏洞「遮住」而不报错，谁也不会发现。
+    宁可这一步失败、不产出文件，也不要产出一份看着干净、其实没脱干净的文件。
+    """
+
+    def __init__(self, entries: List[Any], where: str = "story.html"):
+        self.entries = [(str(kind), str(masked), int(size))
+                        for kind, masked, size in entries]
+        self.where = where
+        super().__init__(
+            f"{where} 仍未通过脱敏自检：{len(self.entries)} 处疑似敏感值残留，已拒绝写出文件")
+
+    def kinds(self) -> Dict[str, int]:
+        out: Dict[str, int] = {}
+        for kind, _masked, _size in self.entries:
+            out[kind] = out.get(kind, 0) + 1
+        return out
+
+    def report(self, limit: int = 8) -> List[str]:
+        """给终端看的诊断行（值已打码）。"""
+        summary = "、".join(f"{k} × {v}" for k, v in self.kinds().items())
+        lines = [f"命中种类：{summary}", "命中样本（已打码）："]
+        for kind, masked, size in self.entries[:limit]:
+            lines.append(f"  - {kind} · {size} 字符 · {masked}")
+        if len(self.entries) > limit:
+            lines.append(f"  … 其余 {len(self.entries) - limit} 处略")
+        return lines
+
+
+def verify_no_leaks(html: str, profile: Dict[str, Any],
+                    where: str = "story.html") -> List[str]:
+    """第三层：最终检查（不再是兜底替换）。
+
+    检出残留即抛 `PrivacyLeakError`。返回空列表表示通过。
     """
     hits = scan_leaks(html, profile)
-    for token in hits:
-        if _PV_MONEY_RE.fullmatch(token) or _CNY_TEXT_RE.fullmatch(token) or "¥" in token:
-            repl = _REDACT_MONEY
-        elif _PV_DAY_RE.search(token):
-            repl = _REDACT_DAY
-        else:
-            repl = _REDACT_FIELD
-        html = html.replace(token, repl)
-    return html, hits
+    if hits:
+        raise PrivacyLeakError(
+            [(_token_kind(t, profile), _mask_token(t), len(str(t))) for t in hits], where)
+    return hits
+
+
+class PublicContentError(RuntimeError):
+    """公开版内容完整性检查未通过 —— 说明脱敏下手过重，把该留的内容也抹掉了。
+
+    隐私保护不该以牺牲可读性为代价：章节、计数、趋势、人格这些与金额 /
+    门店 / 日期无关的内容必须原样保留（审查第八轮 P2 的第二点）。
+    """
+
+    def __init__(self, issues: List[str], where: str = "story.html"):
+        self.issues = list(issues)
+        self.where = where
+        super().__init__(
+            f"{where} 脱敏后内容不完整：{len(self.issues)} 处缺失，已拒绝写出文件")
+
+    def report(self, limit: int = 8) -> List[str]:
+        lines = list(self.issues[:limit])
+        if len(self.issues) > limit:
+            lines.append(f"… 其余 {len(self.issues) - limit} 处略")
+        return lines
+
+
+def _section_slice(html: str, index: int) -> str:
+    start = html.find(f"id='ch{index}'")
+    if start < 0:
+        return ""
+    end = html.find("</section>", start)
+    return html[start:end if end > 0 else len(html)]
+
+
+def _public_shape(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """从**源 profile** 推出公开版应当保留的结构量。
+
+    这里算的量全部由允许清单里的计数 / 比例推导（见 `PUBLIC_FIELD_POLICY`），
+    与金额、门店名、日期无关，所以公开版必须一个不少。
+    """
+    s = profile.get("summary") or {}
+    monthly = profile.get("monthly") or []
+    tags = profile.get("tags") or []
+    keywords = [k for k in (profile.get("keywords") or []) if k.get("word")]
+    cats = [c for c in (profile.get("categories") or []) if (c.get("qty") or 0) > 0]
+    slots = [x for x in (profile.get("slots") or []) if (x.get("count") or 0) > 0]
+    weekdays = [x for x in (profile.get("weekdays") or []) if (x.get("count") or 0) > 0]
+    stores = [x for x in (profile.get("stores") or [])
+              if x.get("name") not in (None, "未知门店")]
+    return {
+        "chapters": [1, 2] if profile.get("empty") else [1, 2, 3, 4, 5, 6],
+        "bars": len(slots) + len(weekdays) + min(8, len(cats)),
+        "pills": (min(10, len(profile.get("top_items") or []))
+                  + min(5, len(profile.get("combos") or []))),
+        "persona_cards": len(tags),
+        "shift_rows": len(profile.get("taste_shift") or []),
+        "month_bars": len(monthly),
+        "keywords": min(6, len(keywords)),
+        "coverage_lines": len(_coverage_lines(profile)),
+        "stores": len(stores),
+        "stats": [
+            (f"{s.get('total_orders', 0)} 单", "订单总数"),
+            (f"{s.get('total_items', 0)} 件", "单品总数"),
+            (f"{s.get('span_days', 0)} 天", "记录跨度"),
+            (f"{s.get('best_streak', 0)} 天", "最长连续打卡"),
+        ],
+    }
+
+
+def public_completeness_issues(html: str, profile: Dict[str, Any]) -> List[str]:
+    """公开版是否因为「抹得太狠」丢了本该保留的内容。返回问题列表（空即通过）。"""
+    want = _public_shape(profile)
+    issues: List[str] = []
+    expected = set(want["chapters"])
+
+    for index in sorted(expected):
+        if not _section_slice(html, index):
+            issues.append(f"缺少第 {index} 章")
+
+    hero = _section_slice(html, 1)
+    for text, label in want["stats"]:
+        if f"<b>{text}</b>" not in hero:
+            issues.append(f"第 1 章关键数字缺失：{label} {text}")
+
+    # 空数据时只渲染第 1、2 章，下面这些章节本就不存在 —— 按「期望章节」门控，
+    # 否则会给一份正常的空报告报出一堆假缺失。
+    if 3 in expected:
+        ch3 = _section_slice(html, 3)
+        got_bars = ch3.count("<div class='bar-head'>")
+        if want["bars"] and got_bars != want["bars"]:
+            issues.append(f"第 3 章条形图行数不符：应 {want['bars']}，实际 {got_bars}")
+        got_pills = ch3.count("<span class='pill'>")
+        if want["pills"] and got_pills != want["pills"]:
+            issues.append(f"第 3 章单品/搭档胶囊数不符：应 {want['pills']}，实际 {got_pills}")
+
+    if 4 in expected:
+        ch4 = _section_slice(html, 4)
+        got_persona = ch4.count("class='persona-card")
+        if want["persona_cards"] and got_persona != want["persona_cards"]:
+            issues.append(f"第 4 章人格卡数不符：应 {want['persona_cards']}，实际 {got_persona}")
+
+    if 5 in expected:
+        ch5 = _section_slice(html, 5)
+        got_shift = ch5.count("class='shift-head'")
+        if want["shift_rows"] and got_shift != want["shift_rows"]:
+            issues.append(f"第 5 章口味变化行数不符：应 {want['shift_rows']}，实际 {got_shift}")
+        got_bars5 = ch5.count("<div title='")
+        if want["month_bars"] and got_bars5 != want["month_bars"]:
+            issues.append(f"第 5 章月度趋势柱数不符：应 {want['month_bars']}，实际 {got_bars5}")
+        store_fact = (f"常去门店 {want['stores']} 家" if want["stores"] else "暂无门店记录")
+        if store_fact not in ch5:
+            issues.append(f"第 5 章门店家数丢失（应为「{store_fact}」）")
+
+    if 6 in expected:
+        ch6 = _section_slice(html, 6)
+        got_kw = ch6.count(">#")
+        if want["keywords"] and got_kw < want["keywords"]:
+            issues.append(f"第 6 章年度关键词缺条：应 {want['keywords']}，实际 {got_kw}")
+        got_cov = ch6.count("<li><span>")
+        if got_cov != want["coverage_lines"]:
+            issues.append(f"第 6 章数据说明行数不符：应 {want['coverage_lines']}，实际 {got_cov}")
+
+    return issues
+
+
+def verify_public_complete(html: str, profile: Dict[str, Any],
+                           where: str = "story.html") -> List[str]:
+    issues = public_completeness_issues(html, profile)
+    if issues:
+        raise PublicContentError(issues, where)
+    return issues
 
 
 def _bar_rows(rows: List[Dict[str, Any]], label_key: str, value_key: str,
@@ -893,7 +1173,7 @@ def _footer(profile: Dict[str, Any], privacy: str = "personal") -> str:
 
 
 def render_story(profile: Dict[str, Any], privacy: str = "personal",
-                 value_sweep: bool = True) -> str:
+                 leak_check: bool = True) -> str:
     """把 profile 渲染成单文件、离线可打开的故事页 HTML。
 
     `privacy="public"` 时按三层脱敏，产出的文件本身不含金额 / 门店名 / 到日日期
@@ -901,10 +1181,13 @@ def render_story(profile: Dict[str, Any], privacy: str = "personal",
 
     1. `redact_profile()`：**渲染前**按字段名 / 字段类型把敏感值换成占位符；
     2. `redact_html()`：渲染完成后再扫一遍已知形态（含内联 JSON 数据块）；
-    3. `scrub_leaks()`：拿原 profile 反推的敏感原始值比对成品，命中即替换。
+    3. `verify_no_leaks()`：拿原 profile 反推的敏感原始值比对成品，
+       **命中即抛 `PrivacyLeakError`、不返回任何 HTML**（fail-closed）；
+       随后 `verify_public_complete()` 确认脱敏没把章节 / 计数 / 趋势一起抹掉。
 
-    `value_sweep=False` 只关掉第三层。它存在的意义是让测试能证明
-    「前两层单独就足够」，而不是让第三层默默兜住所有问题。
+    `leak_check=False` 只关掉第 3 步的**检查**（第 2 步照常执行）。
+    它只给测试用：用来证明「前两层单独就零残留」，
+    而不是让第三层默默兜住所有问题——第三层只报警，不修补。
     """
     if privacy not in PRIVACY_MODES:
         raise ValueError(f"privacy 只能是 {PRIVACY_MODES}，收到 {privacy!r}")
@@ -940,20 +1223,37 @@ def render_story(profile: Dict[str, Any], privacy: str = "personal",
     )
     if public:
         html = redact_html(html, store_names(source))   # 第二层
-        if value_sweep:
-            html, _hits = scrub_leaks(html, source)     # 第三层
+        if leak_check:
+            verify_no_leaks(html, source)               # 第三层：检出残留即拒绝输出
+        verify_public_complete(html, source)            # 脱敏不得伤到可读性
     return html
 
 
 def write_story(profile: Dict[str, Any], out_dir: Path,
                 privacy: str = "personal") -> Path:
+    """渲染并落盘：**全部检查通过之后**才写文件。
+
+    先渲染（脱敏自检在其中），再写临时文件、最后原子替换。这样：
+    - 自检不过时一行都不写，目录里不会出现「没脱干净」的成品；
+    - 也不会中途失败留下半份 HTML，或把上一次的成品改坏。
+    """
+    out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = Path(out_dir) / "story.html"
-    path.write_text(render_story(profile, privacy), encoding="utf-8")
+    html = render_story(profile, privacy)
+    path = out_dir / "story.html"
+    tmp = out_dir / "story.html.tmp"
+    tmp.write_text(html, encoding="utf-8")
+    try:
+        os.replace(tmp, path)
+    except OSError:  # pragma: no cover - 极端文件系统问题
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 
 __all__ = ["render_story", "write_story", "build_story_payload", "redact_html",
-           "redact_profile", "scan_leaks", "scrub_leaks", "sensitive_tokens",
-           "store_names", "is_money_key", "is_sensitive_key",
+           "redact_profile", "scan_leaks", "verify_no_leaks", "sensitive_tokens",
+           "public_completeness_issues", "verify_public_complete",
+           "PrivacyLeakError", "PublicContentError", "PUBLIC_FIELD_POLICY",
+           "store_names", "is_money_key", "is_sensitive_key", "is_safe_number_key",
            "CARD_WIDTH", "CARD_HEIGHT", "PRIVACY_DEFAULTS", "PRIVACY_MODES"]

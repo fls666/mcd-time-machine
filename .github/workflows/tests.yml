@@ -65,7 +65,9 @@ jobs:
         run: node scripts/smoke_story.js build/story.html build/public-story.html
 
   # jsdom 没有布局引擎与真实 Canvas 编码，测不到「手机宽度下的真实排版」与导出的 PNG。
-  # 这里用 Playwright + Chromium 补上 375px 布局、长文本抗溢出、六章滚动与 PNG 尺寸。
+  # 这里用 Playwright 补上手机宽度布局、长文本抗溢出、六章滚动与 PNG 尺寸，
+  # 并且**跑两个引擎**：Chromium（375×812）与 WebKit（Safari 内核，390×844）。
+  # 单引擎等于把 Safari 的字体回退与 Canvas 度量差异留在盲区里。
   browser:
     runs-on: ubuntu-latest
     steps:
@@ -77,10 +79,10 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install Playwright + Chromium
+      - name: Install Playwright + Chromium + WebKit
         run: |
           npm install --no-save --no-audit --no-fund playwright
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium webkit
 
       - name: Generate story pages (personal + public)
         run: |
@@ -89,15 +91,24 @@ jobs:
           cp build/story.html build/public-story.html
           python -m mcd_timemachine story --out build --privacy personal
 
-      - name: Browser check (375px viewport + PNG export)
+      - name: Browser check · Chromium (375px viewport + PNG export)
         env:
           SMOKE_REQUIRE_PLAYWRIGHT: "1"
-        run: node scripts/browser_check.js build/story.html build/public-story.html --keep-png artifacts
+        run: |
+          node scripts/browser_check.js build/story.html build/public-story.html \
+            --engine=chromium --keep-png artifacts
+
+      - name: Browser check · WebKit (Safari 内核，390px viewport)
+        env:
+          SMOKE_REQUIRE_PLAYWRIGHT: "1"
+        run: |
+          node scripts/browser_check.js build/story.html build/public-story.html \
+            --engine=webkit --keep-png artifacts
 
       - name: Upload exported cards
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: share-card-png
-          path: artifacts/*.png
+          path: artifacts/**/*.png
           if-no-files-found: warn

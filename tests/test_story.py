@@ -7,6 +7,7 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from mcd_timemachine.analyzer import analyze
 from mcd_timemachine.cli import main
@@ -378,7 +379,7 @@ class TestStructuredRedaction(unittest.TestCase):
         新增数值字段时这条会失败，逼作者做一次判断——这正是「结构化脱敏」
         相对「按文本长相扫」的价值：漏掉的可能性从「没写正则」变成「测试报错」。
         """
-        from mcd_timemachine.story import _SAFE_NUMBER_KEYS, redact_profile
+        from mcd_timemachine.story import is_safe_number_key, redact_profile
 
         profile = self._augment()
         redacted = redact_profile(profile)
@@ -388,7 +389,7 @@ class TestStructuredRedaction(unittest.TestCase):
             if not any(isinstance(v, (int, float)) and not isinstance(v, bool)
                        for v in values):
                 continue
-            if key in _SAFE_NUMBER_KEYS:
+            if is_safe_number_key(key):
                 continue
             after = [v for k, v in _walk_scalars(redacted) if k == key]
             # 脱敏形态二选一：命名字段的置「已隐藏」，金额字段置「金额已隐藏」
@@ -447,12 +448,12 @@ class TestStructuredRedaction(unittest.TestCase):
 
     # ---------------------------------------------------------- 第二、三层
     def test_layer_one_and_two_leave_no_residue(self):
-        """关掉第三层自检，公开版仍然零残留——证明前两层不是靠兜底才过关。"""
+        """关掉第三层检查，公开版仍然零残留——证明前两层不是靠兜底才过关。"""
         from mcd_timemachine.story import scan_leaks
 
-        two_layers = render_story(self.profile, "public", value_sweep=False)
+        two_layers = render_story(self.profile, "public", leak_check=False)
         self.assertEqual(scan_leaks(two_layers, self.profile), [])
-        # 真实管线里第三层因此不该改动任何东西
+        # 第三层只做检查、不修补，因此真实管线里它的存在不该改动任何一个字符
         self.assertEqual(render_story(self.profile, "public"), two_layers)
 
     def test_body_rendered_from_redacted_data_is_clean(self):
@@ -830,6 +831,364 @@ class TestCliStory(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(SystemExit):
                 main(["demo", "--out", tmp, "--privacy", "secret"])
+
+
+# ================================================================ 第八轮审查
+#
+# P1 脱敏失败要「拒绝输出」而不是悄悄替换；P2 隐私规则边界与「别脱过头」。
+
+def _extreme_profile():
+    """把第八轮点名的边界都塞进一份 profile：小数金额 / 中文地址 / 其它日期写法 /
+    异常字段名 / 嵌套数据。"""
+    import copy
+
+    p = copy.deepcopy(_profile("mcp"))
+    p["summary"].update({
+        "yearly_outlay": 1288.4,   # 小数金额，且字段名不带 ¥ 语义
+        "avg_order": 28.5,
+        "spend_pct": 42,           # 名字含金额词、实为比例 → 不该被抹
+        "refund_count": 12345,     # 名字含金额词、实为计数 → 不该被抹
+    })
+    p["coverage"]["delivery_address"] = "深圳市南山区科技园路 1 号 3 栋 502"
+    p["coverage"]["中文地址"] = "上海市浦东新区世纪大道 100 号"
+    p["last_order"] = {
+        "addr2": "北京市朝阳区建国路 88 号 SOHO 现代城 B 座 1203",
+        "mobile1": "13800138000",
+        "addressLine1": "深圳市南山区科技园路 1 号",
+        "phoneNumber": "0755-88886666",
+        "receiverName": "张三",
+        "收货信息": "广州市天河区天河路 299 号",
+        "订单编号": "MCD202606270001",
+        "idCardNo": "440301199001011234",
+        "bankCard": "6222020200112233445",
+        "emailAddress": "someone@example.com",
+        "userName": "zhangsan",
+        "note": "备注：2026/06/27 送到公司前台，合计 RMB 1288.40（￥1,288.40），"
+                "另一次是 June 27, 2026，记 1234.50 元；27/06/2026 那次 88.5 块。",
+        "nested": {"deep": {"further": [
+            {"order_id": "MCD202606270002", "amount": 66.6,
+             "address": "杭州市西湖区文一西路 969 号"},
+            {"item": "巨无霸", "price": 22.5},
+        ]}},
+    }
+    p["memories"].append({
+        "title": "边界回忆",
+        "text": "2026-06-27 那天花了 ¥1,234.50；英文写法 June 27, 2026、"
+                "斜杠写法 2026/06/27、短横写法 06-27-2026。",
+    })
+    return p
+
+
+EXTREME_MUST_GONE = (
+    "深圳市南山区科技园路", "北京市朝阳区建国路", "广州市天河区天河路",
+    "杭州市西湖区文一西路", "13800138000", "0755-88886666", "440301199001011234",
+    "6222020200112233445", "someone@example.com", "MCD202606270001",
+    "MCD202606270002", "1288.4", "1288.40", "1234.50", "88.5", "66.6",
+    "June 27, 2026", "2026/06/27", "27/06/2026", "06-27-2026",
+)
+
+
+class TestRedactionBoundaries(unittest.TestCase):
+    """第八轮审查 P2：小数金额 / 中文地址 / 英文日期 / 异常字段名 / 嵌套数据。"""
+
+    def setUp(self):
+        self.profile = _extreme_profile()
+        self.public = render_story(self.profile, "public")
+
+    def test_extreme_values_are_all_gone(self):
+        for raw in EXTREME_MUST_GONE:
+            self.assertNotIn(raw, self.public, raw)
+        self.assertEqual(self.public.count("¥") + self.public.count("￥"), 0)
+
+    def test_zero_leak_and_month_granularity_kept(self):
+        from mcd_timemachine.story import scan_leaks
+
+        self.assertEqual(scan_leaks(self.public, self.profile), [])
+        self.assertEqual(
+            len(re.findall(r"\d{4}-\d{2}(?!-)", self.public)),
+            len(re.findall(r"\d{4}-\d{2}(?!-)",
+                           render_story(self.profile, "personal"))))
+
+    def test_fullwidth_yen_and_rmb_are_redacted(self):
+        from mcd_timemachine.story import redact_html
+
+        self.assertEqual(redact_html("￥1,288.40"), "金额已隐藏")
+        self.assertEqual(redact_html("共 RMB 1288.40"), "共 金额已隐藏")
+
+    def test_alt_date_formats_are_redacted(self):
+        from mcd_timemachine.story import redact_html
+
+        for raw in ("2026/06/27", "2026.6.27", "27/06/2026", "06-27-2026",
+                    "June 27, 2026", "Jun 27 2026"):
+            self.assertEqual(redact_html(raw), "日期已隐藏", raw)
+
+    def test_chinese_address_without_label_is_redacted(self):
+        from mcd_timemachine.story import redact_html
+
+        out = redact_html("送到上海市浦东新区世纪大道 100 号")
+        self.assertNotIn("世纪大道", out)
+        self.assertNotIn("100 号", out)
+        self.assertIn("地址已隐藏", out)
+
+    def test_abnormal_field_names_detected(self):
+        from mcd_timemachine.story import is_sensitive_key
+
+        for key in ("addr2", "mobile1", "addressLine1", "phoneNumber",
+                    "receiverName", "收货信息", "订单编号", "姓名", "userName",
+                    "idCardNo", "bankCard", "emailAddress", "order_id"):
+            self.assertTrue(is_sensitive_key(key), key)
+        for key in ("name", "tag", "desc", "count", "month", "store",
+                    "total_orders", "spend_pct", "refund_count"):
+            self.assertFalse(is_sensitive_key(key), key)
+
+    def test_nested_structures_are_redacted(self):
+        from mcd_timemachine.story import redact_profile
+
+        dump = json.dumps(redact_profile(self.profile), ensure_ascii=False)
+        for raw in ("MCD202606270002", "文一西路", "66.6", "22.5"):
+            self.assertNotIn(raw, dump, raw)
+        self.assertIn("已隐藏", dump)
+
+    def test_ratio_and_count_fields_are_not_over_redacted(self):
+        """过度脱敏同样是缺陷：比例 / 计数不该被当成金额抹掉。"""
+        from mcd_timemachine.story import is_safe_number_key, redact_profile
+
+        red = redact_profile(self.profile)
+        self.assertEqual(red["summary"]["spend_pct"], 42)
+        self.assertEqual(red["summary"]["refund_count"], 12345)
+        self.assertEqual(red["summary"]["yearly_outlay"], "金额已隐藏")
+        self.assertTrue(is_safe_number_key("refund_count"))
+        self.assertFalse(is_safe_number_key("yearly_outlay"))
+
+    def test_unregistered_number_is_still_redacted(self):
+        """允许清单 + 后缀约定之外的新数值字段，必须默认被抹（fail-closed）。"""
+        import copy
+
+        from mcd_timemachine.story import redact_profile
+
+        p = copy.deepcopy(self.profile)
+        p["summary"]["vip_spending"] = 9999.9
+        self.assertEqual(redact_profile(p)["summary"]["vip_spending"], "金额已隐藏")
+
+    def test_safe_numbers_never_enter_the_leak_candidates(self):
+        """自检候选里不能混进允许展示的比例 / 计数，否则会误报自己人。"""
+        from mcd_timemachine.story import sensitive_tokens
+
+        tokens = sensitive_tokens(self.profile)
+        for safe in ("12,345.00", "12345.00", "¥12,345.00", "12,345"):
+            self.assertNotIn(safe, tokens, safe)
+
+    def test_personal_masking_covers_alt_formats(self):
+        """个人版的「隐私浏览」也要认这些写法：值仍在文件里（个人版本就该如此），
+        但必须被包进打码 span，开关一开就遮挡。"""
+        from mcd_timemachine.story import _mask_text
+
+        masked = _mask_text("June 27, 2026 花了 ￥1,288.40，另有 RMB 88.5")
+        self.assertEqual(masked.count("class='pv'"), 3)
+        for raw in ("June 27, 2026", "￥1,288.40", "RMB 88.5"):
+            self.assertIn(f">{raw}</span>", masked, raw)
+
+
+class TestPublicCompleteness(unittest.TestCase):
+    """第八轮审查 P2 第二点：公开版字段策略显式化 + 内容完整性（别脱过头）。"""
+
+    def setUp(self):
+        self.profile = _profile("mcp")
+        self.public = render_story(self.profile, "public")
+
+    def test_complete_page_reports_no_issue(self):
+        from mcd_timemachine.story import public_completeness_issues
+
+        self.assertEqual(public_completeness_issues(self.public, self.profile), [])
+
+    def test_policy_defines_the_allow_list(self):
+        from mcd_timemachine.story import PUBLIC_FIELD_POLICY, _SAFE_NUMBER_KEYS
+
+        grouped = {k for group in PUBLIC_FIELD_POLICY.values() for k in group}
+        self.assertEqual(grouped, set(_SAFE_NUMBER_KEYS))
+        self.assertTrue(grouped, "允许清单为空等于让所有数值都被抹掉")
+
+    def test_public_and_personal_keep_the_same_structure(self):
+        """公开版只该少金额 / 门店名 / 到日日期，不该少结构。"""
+        from mcd_timemachine.story import _section_slice
+
+        personal = render_story(self.profile, "personal")
+        for index in range(1, 7):
+            a, b = _section_slice(personal, index), _section_slice(self.public, index)
+            for needle in ("class='reveal'", "class='bar-head'", "<span class='pill'>",
+                           "<div title='", "class='persona-card", "class='shift-head'"):
+                self.assertEqual(b.count(needle), a.count(needle), f"第 {index} 章 {needle}")
+
+    def test_missing_chapter_is_detected(self):
+        from mcd_timemachine.story import public_completeness_issues
+
+        broken = self.public.replace("id='ch5'", "id='gone'")
+        issues = public_completeness_issues(broken, self.profile)
+        self.assertTrue(any("缺少第 5 章" in i for i in issues), issues)
+
+    def test_lost_month_bars_are_detected(self):
+        from mcd_timemachine.story import public_completeness_issues
+
+        broken = re.sub(r"<div title='\d{4}-\d{2}：\d+ 单'>", "", self.public, count=1)
+        self.assertNotEqual(broken, self.public)
+        issues = public_completeness_issues(broken, self.profile)
+        self.assertTrue(any("月度趋势柱数" in i for i in issues), issues)
+
+    def test_over_redacted_store_count_is_detected(self):
+        from mcd_timemachine.story import public_completeness_issues
+
+        stores = [x for x in self.profile["stores"] if x.get("name") not in (None, "未知门店")]
+        self.assertTrue(stores)
+        broken = self.public.replace(f"常去门店 {len(stores)} 家", "门店已隐藏")
+        issues = public_completeness_issues(broken, self.profile)
+        self.assertTrue(any("门店家数" in i for i in issues), issues)
+
+    def test_verify_raises_public_content_error(self):
+        from mcd_timemachine.story import PublicContentError, verify_public_complete
+
+        with self.assertRaises(PublicContentError) as ctx:
+            verify_public_complete("<p>空页面</p>", self.profile)
+        self.assertTrue(ctx.exception.report())
+
+    def test_empty_profile_is_not_flagged(self):
+        from mcd_timemachine.story import public_completeness_issues
+
+        empty = _empty_profile()
+        html = render_story(empty, "public")
+        self.assertEqual(public_completeness_issues(html, empty), [])
+
+    def test_various_sample_sizes_pass_both_checks(self):
+        from mcd_timemachine.story import public_completeness_issues, scan_leaks
+
+        for count in (1, 2, 3, 5, 6, 7, 12, 30, 160):
+            profile = _profile("mcp", count=count)
+            html = render_story(profile, "public")
+            self.assertEqual(scan_leaks(html, profile), [], f"{count} 单")
+            self.assertEqual(public_completeness_issues(html, profile), [], f"{count} 单")
+
+
+class TestFailClosedPublishing(unittest.TestCase):
+    """第八轮审查 P1：检出残留必须**拒绝输出**，而不是悄悄替换后继续写。
+
+    做法是把前两层打成「什么都不做」，看第三层是否真的拦得住。
+    这样测的是发布策略本身，而不是某条正则。
+    """
+
+    def setUp(self):
+        self.profile = _profile("mcp")
+
+    def _bypass_layers(self):
+        from mcd_timemachine import story
+
+        return (
+            mock.patch.object(story, "redact_profile", lambda profile: profile),
+            mock.patch.object(story, "redact_html", lambda html, names=None: html),
+        )
+
+    def test_render_public_refuses_when_layers_are_bypassed(self):
+        from mcd_timemachine.story import PrivacyLeakError
+
+        first, second = self._bypass_layers()
+        with first, second, self.assertRaises(PrivacyLeakError) as ctx:
+            render_story(self.profile, "public")
+        self.assertTrue(ctx.exception.entries)
+        self.assertTrue(ctx.exception.kinds())
+
+    def test_the_check_is_what_catches_it(self):
+        """关掉这道检查就能看到泄漏 —— 证明拦住它的确实是检查，而不是别的东西清场了。"""
+        from mcd_timemachine.story import scan_leaks
+
+        first, second = self._bypass_layers()
+        with first, second:
+            loose = render_story(self.profile, "public", leak_check=False)
+        self.assertNotEqual(scan_leaks(loose, self.profile), [])
+
+    def test_write_story_leaves_no_file(self):
+        from mcd_timemachine.story import PrivacyLeakError
+
+        first, second = self._bypass_layers()
+        with tempfile.TemporaryDirectory() as tmp, first, second:
+            with self.assertRaises(PrivacyLeakError):
+                write_story(self.profile, Path(tmp), "public")
+            self.assertEqual(list(Path(tmp).iterdir()), [], "自检不过时不该落下任何文件")
+
+    def test_write_reports_does_not_swallow_the_failure(self):
+        """report.md 照写，但隐私失败必须冒出来——不能被「可选资源」的兜底吞掉。"""
+        from mcd_timemachine.reporter import write_reports
+        from mcd_timemachine.story import PrivacyLeakError
+
+        first, second = self._bypass_layers()
+        with tempfile.TemporaryDirectory() as tmp, first, second:
+            with self.assertRaises(PrivacyLeakError):
+                write_reports(self.profile, Path(tmp), "public")
+            self.assertTrue((Path(tmp) / "report.md").is_file())
+            self.assertFalse((Path(tmp) / "story.html").exists())
+
+    def test_cli_exit_code_3_and_no_output(self):
+        first, second = self._bypass_layers()
+        with tempfile.TemporaryDirectory() as tmp, first, second:
+            (Path(tmp) / "profile.json").write_text(
+                json.dumps(self.profile, ensure_ascii=False), encoding="utf-8")
+            self.assertEqual(main(["story", "--out", tmp, "--privacy", "public"]), 3)
+            self.assertFalse((Path(tmp) / "story.html").exists())
+
+    def test_error_report_masks_the_values(self):
+        """报错信息不能把敏感值再打一遍（否则「报泄漏」本身成了新的泄漏点）。"""
+        from mcd_timemachine.story import PrivacyLeakError, sensitive_tokens
+
+        first, second = self._bypass_layers()
+        with first, second:
+            try:
+                render_story(self.profile, "public")
+                self.fail("应该抛出 PrivacyLeakError")
+            except PrivacyLeakError as exc:
+                text = "\n".join([str(exc)] + exc.report())
+        for token in sensitive_tokens(self.profile):
+            self.assertNotIn(token, text, token)
+
+    def test_personal_mode_is_never_blocked(self):
+        """fail-closed 只针对公开版；个人版本来就允许含原始数据。"""
+        first, second = self._bypass_layers()
+        with first, second:
+            html = render_story(self.profile, "personal")
+        self.assertIn("¥", html)
+
+    def test_successful_write_is_atomic_and_leaves_no_tmp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_story(self.profile, Path(tmp), "personal")
+            self.assertEqual([p.name for p in Path(tmp).iterdir()], ["story.html"])
+            self.assertEqual(path.read_text(encoding="utf-8"),
+                             render_story(self.profile, "personal"))
+
+
+class TestBrowserHarness(unittest.TestCase):
+    """浏览器验收脚本与 CI 的接线：单引擎等于把 Safari 的差异留在盲区里。"""
+
+    def setUp(self):
+        root = Path(__file__).resolve().parent.parent
+        self.js = (root / "scripts" / "browser_check.js").read_text(encoding="utf-8")
+        self.ci = (root / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+
+    def test_engine_is_selectable(self):
+        self.assertIn("const ENGINE = process.env.BROWSER_ENGINE || argOf('engine')", self.js)
+        self.assertIn("const engine = playwright[ENGINE];", self.js)
+        self.assertNotIn("chromium.launch()", self.js)   # 不能写死引擎
+        self.assertIn("await engine.launch()", self.js)
+
+    def test_viewport_is_parameterised(self):
+        self.assertIn("const VP_LABEL = VIEWPORT.width + 'px';", self.js)
+        self.assertIn("webkit", self.js)
+        self.assertIn("--viewport=", self.js)
+
+    def test_exported_samples_are_separated_per_engine(self):
+        """两种引擎的导出样本不能互相覆盖，否则证据只剩一个引擎的。"""
+        self.assertIn("const outDir = keepDir ? path.join(keepDir, ENGINE) : tmpDir;", self.js)
+
+    def test_ci_runs_both_engines_and_installs_both(self):
+        self.assertIn("npx playwright install --with-deps chromium webkit", self.ci)
+        self.assertIn("--engine=chromium", self.ci)
+        self.assertIn("--engine=webkit", self.ci)
+        self.assertIn("artifacts/**/*.png", self.ci)
 
 
 if __name__ == "__main__":

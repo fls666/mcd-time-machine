@@ -1,18 +1,22 @@
-/* 真实浏览器验收（Playwright + Chromium headless）。
+/* 真实浏览器验收（Playwright，支持 Chromium 与 WebKit）。
  *
  * 补上 jsdom 冒烟测不到的那一层：真实布局引擎与真实 Canvas 编码。
- * 覆盖审查要求的六项：
- *   1) 375px 手机宽度下无横向溢出；
+ * 覆盖审查要求的七项：
+ *   1) 手机宽度下无横向溢出；
  *   2) 较长商品名 / 门店名不撑破布局；
  *   3) 隐私模式（页面开关 + 公开分享版）；
  *   4) 六章节滚动叙事真的逐章显现；
  *   5) 导出 share-card.png 并校验尺寸与元数据；
  *   6) 极端字符（空字符串 / 超长英文 / Emoji / 中英混排 / 四项全开）在真实
- *      字体度量下仍不越界——Emoji 宽度与 jsdom 估算不同，是最坏的一版输入。
+ *      字体度量下仍不越界——Emoji 宽度与 jsdom 估算不同，是最坏的一版输入；
+ *   7) **换一个浏览器引擎（WebKit = Safari 内核）再跑一遍**：无头 Chromium
+ *      测不到 Safari 的字体回退、`svh` 处理与 Canvas 度量差异，这是第八轮
+ *      审查提到的「Safari / iOS 兼容性」在自动化层面能覆盖到的部分。
  *
- * 用法（需要 playwright 与 chromium）：
- *   npm install playwright && npx playwright install chromium
- *   node scripts/browser_check.js <personal story.html> [public story.html] [--keep-png DIR]
+ * 用法（需要 playwright 与对应引擎）：
+ *   npm install playwright && npx playwright install chromium webkit
+ *   node scripts/browser_check.js <personal story.html> [public story.html] \
+ *        [--engine=chromium|webkit] [--viewport=390x844] [--keep-png DIR]
  *
  * 依赖缺失时以退出码 2 跳过；设置 SMOKE_REQUIRE_PLAYWRIGHT=1（CI 用）则改为失败。
  */
@@ -25,6 +29,23 @@ const personal = process.argv[2];
 const publicFile = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : null;
 const keepIdx = process.argv.indexOf('--keep-png');
 const keepDir = keepIdx > -1 ? process.argv[keepIdx + 1] : null;
+const argOf = (name) => {
+  const hit = process.argv.find((a) => a.startsWith('--' + name + '='));
+  return hit ? hit.split('=')[1] : null;
+};
+
+const ENGINE = process.env.BROWSER_ENGINE || argOf('engine') || 'chromium';
+// 默认视口按引擎取常见机型：Chromium 用 375×812（审查指定宽度），
+// WebKit 用 iPhone 12/13/14 的 390×844。
+const DEFAULT_VIEWPORT = ENGINE === 'webkit'
+  ? { width: 390, height: 844 }
+  : { width: 375, height: 812 };
+const vpArg = argOf('viewport');
+const VIEWPORT = vpArg
+  ? { width: parseInt(vpArg.split('x')[0], 10), height: parseInt(vpArg.split('x')[1], 10) }
+  : DEFAULT_VIEWPORT;
+const VP_LABEL = VIEWPORT.width + 'px';
+const TAG = ENGINE === 'chromium' ? '' : `[${ENGINE}] `;
 
 if (!personal) {
   console.error('用法：node scripts/browser_check.js <personal story.html> [public story.html]');
@@ -43,20 +64,24 @@ function loadPlaywright() {
         console.error('CI 要求执行浏览器验收，但 playwright 不可用：' + e2.message);
         process.exit(1);
       }
-      console.warn('未安装 playwright，跳过浏览器验收。安装：npm install playwright && npx playwright install chromium');
+      console.warn('未安装 playwright，跳过浏览器验收。安装：npm install playwright && npx playwright install chromium webkit');
       process.exit(2);
     }
   }
 }
 
-const { chromium } = loadPlaywright();
-const VIEWPORT = { width: 375, height: 812 };   // iPhone X 竖屏，审查指定的宽度
+const playwright = loadPlaywright();
+const engine = playwright[ENGINE];
+if (!engine) {
+  console.error(`未知引擎 ${ENGINE}：可选 chromium / webkit / firefox`);
+  process.exit(2);
+}
 
 let failures = 0;
 function check(name, cond, extra) {
   const ok = !!cond;
   if (!ok) failures++;
-  console.log((ok ? 'PASS  ' : 'FAIL  ') + name + (extra ? '  -> ' + extra : ''));
+  console.log((ok ? 'PASS  ' : 'FAIL  ') + TAG + name + (extra ? '  -> ' + extra : ''));
 }
 const url = (p) => pathToFileURL(path.resolve(p)).href;
 
@@ -223,17 +248,19 @@ async function downloadCard(page, savePath) {
 }
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await engine.launch();
   const context = await browser.newContext({
     viewport: VIEWPORT, deviceScaleFactor: 3, isMobile: true, hasTouch: true,
   });
   const page = await context.newPage();
+  console.log(`引擎 ${ENGINE} ${browser.version()} · 视口 ${VIEWPORT.width}x${VIEWPORT.height}`);
   const errors = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcdtm-browser-'));
-  const pngPersonal = path.join(keepDir || tmpDir, 'share-card.png');
+  const outDir = keepDir ? path.join(keepDir, ENGINE) : tmpDir;
+  const pngPersonal = path.join(outDir, 'share-card.png');
   if (keepDir) fs.mkdirSync(keepDir, { recursive: true });
 
   // ---------------------------------------------------------------- 个人完整版
@@ -241,9 +268,9 @@ async function downloadCard(page, savePath) {
   await page.waitForTimeout(300);
 
   const g1 = await geometry(page);
-  check('[375px] 页面滚动宽度未超出视口', g1.scrollW <= g1.vw + 1,
+  check(`[${VP_LABEL}] 页面滚动宽度未超出视口`, g1.scrollW <= g1.vw + 1,
     `scrollWidth=${g1.scrollW} innerWidth=${g1.vw}`);
-  check('[375px] 没有元素越出左右边界', g1.bad.length === 0, g1.bad.join(' | '));
+  check(`[${VP_LABEL}] 没有元素越出左右边界`, g1.bad.length === 0, g1.bad.join(' | '));
 
   // 六章节存在且可滚动到位
   for (let i = 1; i <= 6; i++) {
@@ -340,9 +367,9 @@ async function downloadCard(page, savePath) {
     await page.goto(url(hostilePath), { waitUntil: 'load' });
     await page.waitForTimeout(250);
     const g2 = await geometry(page);
-    check('[长文本 375px] 页面滚动宽度未超出视口', g2.scrollW <= g2.vw + 1,
+    check(`[长文本 ${VP_LABEL}] 页面滚动宽度未超出视口`, g2.scrollW <= g2.vw + 1,
       `scrollWidth=${g2.scrollW}`);
-    check('[长文本 375px] 没有元素越出左右边界', g2.bad.length === 0, g2.bad.join(' | '));
+    check(`[长文本 ${VP_LABEL}] 没有元素越出左右边界`, g2.bad.length === 0, g2.bad.join(' | '));
     check('[长文本] 没有可执行事件属性注入',
       await page.evaluate(() => document.querySelectorAll('[onerror],[onmouseover]').length === 0));
     // 四项全开后导出，验证长文本不会让导出失败或改变尺寸
@@ -353,7 +380,7 @@ async function downloadCard(page, savePath) {
       });
     });
     await page.waitForTimeout(200);
-    const pngLong = path.join(keepDir || tmpDir, 'share-card-long.png');
+    const pngLong = path.join(outDir, 'share-card-long.png');
     await downloadCard(page, pngLong);
     const png2 = parsePng(fs.readFileSync(pngLong));
     check('[长文本] 导出仍是 1080x1920',
@@ -377,9 +404,9 @@ async function downloadCard(page, savePath) {
     });
     await page.waitForTimeout(200);
     const g4 = await geometry(page);
-    check('[极端 375px] 页面滚动宽度未超出视口', g4.scrollW <= g4.vw + 1,
+    check(`[极端 ${VP_LABEL}] 页面滚动宽度未超出视口`, g4.scrollW <= g4.vw + 1,
       `scrollWidth=${g4.scrollW}`);
-    check('[极端 375px] 没有元素越出左右边界', g4.bad.length === 0, g4.bad.join(' | '));
+    check(`[极端 ${VP_LABEL}] 没有元素越出左右边界`, g4.bad.length === 0, g4.bad.join(' | '));
     check('[极端] 页面文本里没有乱码替换字符',
       await page.evaluate(() => document.body.innerText.indexOf('\uFFFD') < 0));
     check('[极端] 四项字段确实都处于开启状态',
@@ -387,7 +414,7 @@ async function downloadCard(page, savePath) {
         .every((id) => document.getElementById(id).checked)));
     // 真实字体度量下的面板边界：Emoji 比 jsdom 估算更宽，这里最容易露馅
     await panelBounds(page, '极端');
-    const pngExtreme = path.join(keepDir || tmpDir, 'share-card-extreme.png');
+    const pngExtreme = path.join(outDir, 'share-card-extreme.png');
     await downloadCard(page, pngExtreme);
     const png4 = parsePng(fs.readFileSync(pngExtreme));
     check('[极端] 导出仍是 1080x1920',
@@ -420,9 +447,9 @@ async function downloadCard(page, savePath) {
     check('[公开版] 顶部有公开分享版横幅',
       await page.locator('.mode-banner.public').count() === 1);
     const g3 = await geometry(page);
-    check('[公开版 375px] 没有元素越出左右边界', g3.bad.length === 0 && g3.scrollW <= g3.vw + 1,
+    check(`[公开版 ${VP_LABEL}] 没有元素越出左右边界`, g3.bad.length === 0 && g3.scrollW <= g3.vw + 1,
       `scrollWidth=${g3.scrollW} ${g3.bad.join(' | ')}`);
-    const pngPublic = path.join(keepDir || tmpDir, 'share-card-public.png');
+    const pngPublic = path.join(outDir, 'share-card-public.png');
     await downloadCard(page, pngPublic);
     const png3 = parsePng(fs.readFileSync(pngPublic));
     check('[公开版] 导出仍是 1080x1920',

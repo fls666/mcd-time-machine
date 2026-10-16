@@ -7,7 +7,9 @@
  *      与超长中文，验证分享预览只以纯文本呈现，且绘制文字不越出画布。
  *   E. 极端数据路径：空字符串 / 空关键词 / 超长英文（无空格）/ Emoji（含 ZWJ 组合）
  *      / 中英混排 / 四项字段全开，验证不崩、不溢出、面板几何仍成立。
- *   D. 公开分享版（可选第二个参数）：验证金额 / 门店 / 到日日期确实不在文件里。
+ *   D. 公开分享版（可选第二个参数）：验证金额 / 门店 / 到日日期确实不在文件里，
+ *      并与个人版逐章比对结构（章节 / 条形 / 胶囊 / 月份柱 / 人格卡 / 数据说明行），
+ *      确认「脱敏」没有连可读内容一起抹掉。
  * 各路径都会校验：隐私默认值（四项默认隐藏）、生成时间默认不入图、绘制文字在画布内。
  *
  * 本机运行（需要 jsdom）：
@@ -134,6 +136,29 @@ function boot(withObserver, source) {
 }
 
 const FIELD_LABELS = ['消费金额', '门店名称', '消费日期', '生成时间'];
+
+/* 结构完整性（第八轮审查 P2）：公开版只该少金额 / 门店名 / 到日日期，
+ * 不该少任何结构。这里用静态切分逐章比对个人版与公开版，
+ * 对「脱敏下手过重把可读内容也抹了」形成一道前端防线。 */
+function sectionOf(htmlText, index) {
+  const start = htmlText.indexOf("id='ch" + index + "'");
+  if (start < 0) return '';
+  const end = htmlText.indexOf('</section>', start);
+  return htmlText.slice(start, end < 0 ? htmlText.length : end);
+}
+
+function structCounts(htmlText, index) {
+  const part = sectionOf(htmlText, index);
+  return {
+    reveal: (part.match(/class='reveal'/g) || []).length,
+    barHead: (part.match(/class='bar-head'/g) || []).length,
+    pill: (part.match(/<span class='pill'>/g) || []).length,
+    monthBar: (part.match(/<div title='/g) || []).length,
+    persona: (part.match(/class='persona-card/g) || []).length,
+    shift: (part.match(/class='shift-head'/g) || []).length,
+    field: (part.match(/<li><span>/g) || []).length,
+  };
+}
 
 /* 绘制边界：所有文字必须落在 1080x1920 之内（右对齐要以 x 为右边界反推左边界） */
 function checkBounds(boxes, label) {
@@ -487,6 +512,24 @@ setTimeout(() => {
         check('[公开版] 脚本无运行时异常', pub.errors.length === 0, pub.errors.join(' | '));
         checkBounds(pub.boxes, '公开版');
         checkPanelBounds(doc4, '公开版');
+
+        // 与个人版逐章比对结构：脱敏只能少敏感值，不能少结构
+        const personalHtml = fs.readFileSync(file, 'utf8');
+        const drift = [];
+        for (let i = 1; i <= 6; i++) {
+          const a = structCounts(personalHtml, i);
+          const b = structCounts(pubHtml, i);
+          Object.keys(a).forEach((k) => {
+            if (a[k] !== b[k]) drift.push(`ch${i}.${k}: ${a[k]}→${b[k]}`);
+          });
+        }
+        check('[公开版] 六章结构与个人版逐项一致（没有脱过头）',
+          drift.length === 0, drift.slice(0, 5).join(' | '));
+        const monthsOf = (t) => (t.match(/\d{4}-\d{2}(?!-)/g) || []).length;
+        check('[公开版] 月度趋势仍保留「年-月」粒度',
+          monthsOf(pubHtml) > 0 && monthsOf(pubHtml) === monthsOf(personalHtml),
+          `公开=${monthsOf(pubHtml)} 个人=${monthsOf(personalHtml)}`);
+
         pub.dom.window.close();
 
         console.log(failures === 0 ? '\n全部通过' : `\n${failures} 项失败`);

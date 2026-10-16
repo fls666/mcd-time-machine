@@ -20,11 +20,12 @@
 `file://` 协议在 iOS 上限制较多，想验证导出与剪贴板就用这种方式：
 
 ```bash
-# 在电脑上（仓库根目录）
-python -m http.server 8123
+# 1) 查本机局域网 IP
+#    Windows：ipconfig（找「IPv4 地址」）/ PowerShell：Get-NetIPAddress -AddressFamily IPv4
+#    macOS/Linux：ifconfig | grep "inet "  /  ip -4 addr
 
-# 查本机局域网 IP（Windows）
-ipconfig | findstr IPv4
+# 2) 在仓库根目录起一个静态服务，只绑到局域网网卡（不要用 0.0.0.0）
+python -m http.server 8123 --bind <电脑局域网IP>
 ```
 
 手机与电脑连同一个 Wi-Fi，浏览器打开：
@@ -34,7 +35,7 @@ http://<电脑局域网IP>:8123/docs/preview-story.html
 http://<电脑局域网IP>:8123/docs/preview-story-public.html
 ```
 
-注意：这会把 `docs/` 目录临时暴露在局域网内。该目录只有示例数据生成的成品，
+注意：这会把 `docs/` 目录临时暴露在同一局域网内。该目录只有示例数据生成的成品，
 没有真实订单（真实数据在 `mcdtm-output/`，不在 `docs/`）；用完 `Ctrl+C` 停掉即可。
 
 **C. 合并进 `main` 后用 GitHub Pages**：最接近评委看到的形态，但需要先合并 PR。

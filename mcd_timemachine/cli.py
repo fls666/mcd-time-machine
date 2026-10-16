@@ -6,7 +6,19 @@
     mcdtm fetch             通过 MCP 拉取真实订单与菜单数据（自动翻页）
     mcdtm analyze           分析并生成报告
     mcdtm all               fetch + analyze 一步到位
+    mcdtm story             用已有 profile.json 重新生成沉浸式故事页 story.html
     mcdtm inspect orders    查看某个工具的原始返回，便于排查字段
+
+每次分析都会产出三份同源文件：report.md（完整报告）、report.html（完整报告网页）、
+story.html（V2.0 六章节滚动故事 + 隐私友好分享卡片）。
+
+story.html 有两种生成模式，用 `--privacy` 选择：
+    personal（默认）个人完整版：保留金额 / 门店 / 日期，页面另有「隐私浏览」临时遮挡开关；
+    public          公开分享版：金额 / 门店名 / 到日日期在生成时就从 HTML 里移除，可直接分享。
+
+公开版是 fail-closed 的：生成之后会跑两道检查——脱敏自检（成品里是否还有敏感值残留）
+与内容完整性检查（章节 / 计数是否被误抹）。任一项不通过就**直接报错、不写出文件**
+（退出码 3 = 脱敏自检未过，4 = 内容完整性未过），而不是悄悄替换后继续输出。
 """
 
 from __future__ import annotations
@@ -14,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -24,6 +37,7 @@ from .demo_data import generate
 from .mcp_client import DEFAULT_ENDPOINT, McpClient, McpError, TOOLS
 from .reporter import print_console, write_reports
 from .share import write_share
+from .story import PRIVACY_MODES, PublicContentError, PrivacyLeakError
 
 DEFAULT_OUT = Path("mcdtm-output")
 
@@ -60,6 +74,7 @@ def _run_analysis(
     out_dir: Path,
     extras: Dict[str, Any],
     coverage: Dict[str, Any],
+    privacy: str = "personal",
 ) -> None:
     profile = analyze(orders, extras or None, coverage)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -69,10 +84,24 @@ def _run_analysis(
     (out_dir / "provenance.json").write_text(
         json.dumps(coverage, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    paths = write_reports(profile, out_dir)
+    paths = write_reports(profile, out_dir, privacy)
     print_console(profile)
     print()
     print(f"报告已生成：{paths['html']}  {paths['md']}")
+    if paths.get("story"):
+        print(f"沉浸式故事：{paths['story']}（手机竖屏浏览，第 6 章可导出分享卡片）")
+        _print_privacy_hint(privacy)
+
+
+def _print_privacy_hint(privacy: str) -> None:
+    if privacy == "public":
+        print("生成模式：公开分享版 —— 金额、门店名称、到日日期已在生成时移除，本文件可直接分享。")
+        print("已通过两道检查：脱敏自检（0 处敏感值残留）+ 内容完整性（章节与计数齐备）；"
+              "任一项不通过都不会写出文件。")
+        print("注意：同目录的 report.html / report.md / profile.json 仍含完整数据，不要一并发出。")
+    else:
+        print("生成模式：个人完整版 —— story.html 内含金额、门店与具体日期，请勿直接转发；")
+        print("要对外分享，可另跑 `mcdtm story --privacy public`，或只发第 6 章导出的 share-card.png。")
 
 
 # ---------------------------------------------------------------- 子命令
@@ -80,7 +109,14 @@ def _run_analysis(
 def cmd_demo(args: argparse.Namespace) -> int:
     out_dir: Path = args.out
     out_dir.mkdir(parents=True, exist_ok=True)
-    orders = generate(orders=args.count, seed=args.seed)
+    as_of: Optional[datetime] = None
+    if getattr(args, "as_of", None):
+        try:
+            as_of = datetime.strptime(args.as_of, "%Y-%m-%d")
+        except ValueError:
+            print(f"错误：--as-of 需要 YYYY-MM-DD 格式，收到 {args.as_of!r}", file=sys.stderr)
+            return 1
+    orders = generate(orders=args.count, seed=args.seed, end=as_of)
     coverage = build_coverage(
         source="demo",
         pages=1,
@@ -93,7 +129,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
         tools={"demo_data.generate": "ok"},
     )
     print(f"[demo] 已生成 {len(orders)} 条虚构订单（示例数据，非真实账号数据）")
-    _run_analysis(orders, out_dir, {}, coverage)
+    _run_analysis(orders, out_dir, {}, coverage, getattr(args, "privacy", "personal"))
     return 0
 
 
@@ -166,7 +202,29 @@ def cmd_fetch(args: argparse.Namespace) -> int:
 def cmd_analyze(args: argparse.Namespace) -> int:
     out_dir: Path = args.out
     orders = load_normalized(out_dir)
-    _run_analysis(orders, out_dir, _load_extras(out_dir), load_coverage(out_dir))
+    _run_analysis(orders, out_dir, _load_extras(out_dir), load_coverage(out_dir),
+                  getattr(args, "privacy", "personal"))
+    return 0
+
+
+def cmd_story(args: argparse.Namespace) -> int:
+    """用已生成的 profile.json 单独重刷故事页（不重新联网、不重新分析）。"""
+    out_dir: Path = args.out
+    profile_path = out_dir / "profile.json"
+    if not profile_path.exists():
+        print(f"找不到 {profile_path}。请先执行 `mcdtm analyze`（或 `mcdtm demo`）。")
+        return 1
+    try:
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"profile.json 解析失败：{exc}")
+        return 1
+    privacy = getattr(args, "privacy", "personal")
+    from .story import write_story
+
+    target = write_story(profile, out_dir, privacy)
+    print(f"已生成 {target}")
+    _print_privacy_hint(privacy)
     return 0
 
 
@@ -179,7 +237,8 @@ def cmd_all(args: argparse.Namespace) -> int:
     except FileNotFoundError as exc:
         print(exc)
         return 1
-    _run_analysis(orders, args.out, _load_extras(args.out), load_coverage(args.out))
+    _run_analysis(orders, args.out, _load_extras(args.out), load_coverage(args.out),
+                  getattr(args, "privacy", "personal"))
     return 0
 
 
@@ -222,6 +281,9 @@ def _common_parser() -> argparse.ArgumentParser:
                         help=f"MCP 接入地址，默认 {DEFAULT_ENDPOINT}")
     common.add_argument("--out", type=Path, default=argparse.SUPPRESS,
                         help=f"输出目录，默认 {DEFAULT_OUT}")
+    common.add_argument("--privacy", choices=list(PRIVACY_MODES), default=argparse.SUPPRESS,
+                        help="story.html 生成模式：personal=个人完整版（默认），"
+                             "public=公开分享版（生成时即移除金额/门店名/到日日期）")
     return common
 
 
@@ -237,6 +299,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help=f"MCP 接入地址，默认 {DEFAULT_ENDPOINT}")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT,
                         help="输出目录，默认 ./mcdtm-output")
+    parser.add_argument("--privacy", choices=list(PRIVACY_MODES), default="personal",
+                        help="story.html 生成模式：personal=个人完整版（默认，含原始数据），"
+                             "public=公开分享版（金额/门店名/到日日期在生成时即移除）")
 
     sub = parser.add_subparsers(dest="command", required=True)
     common = _common_parser()
@@ -244,6 +309,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_demo = sub.add_parser("demo", parents=[common], help="用虚构示例数据跑通全流程")
     p_demo.add_argument("--count", type=int, default=160, help="示例订单条数")
     p_demo.add_argument("--seed", type=int, default=1024, help="随机种子")
+    p_demo.add_argument("--as-of", metavar="YYYY-MM-DD", default=None,
+                        help="固定示例数据的基准日期，使同一 seed 产出完全一致的结果"
+                             "（CI 与文档预览用它消除日期漂移）")
     p_demo.set_defaults(func=cmd_demo)
 
     p_doctor = sub.add_parser("doctor", parents=[common],
@@ -262,6 +330,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_analyze = sub.add_parser("analyze", parents=[common], help="分析并生成报告")
     p_analyze.set_defaults(func=cmd_analyze)
+
+    p_story = sub.add_parser(
+        "story", parents=[common],
+        help="用已有 profile.json 重新生成沉浸式故事页 story.html")
+    p_story.set_defaults(func=cmd_story)
 
     p_all = sub.add_parser("all", parents=[common], help="fetch + analyze")
     p_all.add_argument("--minimal", action="store_true", help="只拉订单")
@@ -287,6 +360,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
+    except PrivacyLeakError as exc:
+        # fail-closed：报错但不产出文件。诊断行里的值一律打码，
+        # 否则「报泄漏」本身又成了新的泄漏点。
+        print(f"[错误] {exc}", file=sys.stderr)
+        for line in exc.report():
+            print("        " + line, file=sys.stderr)
+        print("        已按 fail-closed 策略放弃输出：目录里不会出现这份公开版，"
+              "若原本存在同名文件，那是上一次生成的结果。", file=sys.stderr)
+        print("        排查方向：新增字段没被脱敏规则覆盖。可先用 "
+              "`mcdtm story --privacy personal` 生成个人完整版自查，"
+              "并把上面（已打码的）命中行反馈给作者。", file=sys.stderr)
+        return 3
+    except PublicContentError as exc:
+        print(f"[错误] {exc}", file=sys.stderr)
+        for line in exc.report():
+            print("        " + line, file=sys.stderr)
+        print("        这是「隐私保护过度」而不是泄漏：脱敏可能把与金额 / 门店 / 日期无关的"
+              "内容也抹掉了，因此同样不下发文件，以免你分享出一份残缺的页面。", file=sys.stderr)
+        return 4
     except McpError as exc:
         print(f"[错误] {exc}", file=sys.stderr)
         return 2

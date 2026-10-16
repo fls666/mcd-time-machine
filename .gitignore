@@ -25,3 +25,8 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# 前端验收产生的导出样本
+artifacts/
+node_modules/
+package-lock.json

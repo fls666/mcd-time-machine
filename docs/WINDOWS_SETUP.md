@@ -305,7 +305,8 @@ python -m mcd_timemachine all
 ### 打开报告
 
 ```powershell
-start mcdtm-output\report.html
+start mcdtm-output\story.html    :: V2.0 沉浸式故事页（手机竖屏 / 可导出分享卡片）
+start mcdtm-output\report.html   :: 完整数据报告
 ```
 
 ### 关于「订单条数」的重要说明
@@ -482,7 +483,8 @@ python -m mcd_timemachine inspect orders
 python -m mcd_timemachine share
 
 # 打开报告
-start mcdtm-output\report.html
+start mcdtm-output\story.html    :: V2.0 沉浸式故事页（手机竖屏 / 可导出分享卡片）
+start mcdtm-output\report.html   :: 完整数据报告
 ```
 
 如果装了 `pipx` 或用 `pip install -e .`，也可以用更短的 `mcdtm` 命令，

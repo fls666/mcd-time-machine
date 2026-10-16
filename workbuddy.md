@@ -114,13 +114,16 @@ $ python -m compileall -q mcd_timemachine scripts
 需要 Node（测试专用依赖，运行期零依赖不受影响）：
 
 ```
-# 4.1 jsdom 冒烟：真跑页面脚本，四条路径共 93 项断言
+# 4.1 jsdom 冒烟：真跑页面脚本，四条路径共 114 项断言
 $ npm install jsdom
 $ node scripts/smoke_story.js build/story.html build/public-story.html
 ...
+PASS  [恶意] 人格描述没有跑出人格面板  -> descBottom=null panelBottom=856
+PASS  [恶意] 关键词胶囊块没有压到字段面板  -> chipsBottom=1236 rowsTop=1262
+PASS  [恶意] 字段面板没有越过页脚上沿  -> rowsBottom=1648 footTop=1660
 全部通过
 
-# 4.2 真实浏览器验收：375×812 视口，35 项断言
+# 4.2 真实浏览器验收：375×812 视口，44 项断言
 $ npm install playwright && npx playwright install chromium
 $ node scripts/browser_check.js build/story.html build/public-story.html --keep-png artifacts
 PASS  [375px] 页面滚动宽度未超出视口  -> scrollWidth=375 innerWidth=375
@@ -128,6 +131,7 @@ PASS  [章节] 第 2 章 8 个渐显元素滚入后都完整显现
 ...
 PASS  [导出] 尺寸 1080x1920  -> {"width":1080,"height":1920}
 PASS  [导出] PNG 不含元数据块
+PASS  [长文本] 人格描述没有跑出人格面板  -> descBottom=null panelBottom=856
 全部通过
 ```
 
@@ -264,23 +268,32 @@ HTML 注入载荷与超长中文，断言预览区不产生任何可执行节点
 | 优先级 | 审查意见 | 处理 | 证据 |
 | --- | --- | --- | --- |
 | P1 | 「隐私浏览」只是 CSS 遮挡，用户可能误以为原始数据已从文件中删除，建议区分两种模式 | 新增 `--privacy {personal,public}`：`public` 为**生成期脱敏**——金额 → 「金额已隐藏」、到日日期 → 「日期已隐藏」、门店名 → 「门店已隐藏」，脱敏作用于整份 HTML（含内联 JSON 数据块）；两模式各有顶部横幅说明这份文件里到底有什么；页脚在个人版明确写「请勿直接转发本文件」 | `tests/test_story.py::TestPublicMode`（14 条）、`TestsCliStory`、jsdom 冒烟 D 路径、浏览器验收公开版段落 |
-| P1 | 分享卡片长文本可能溢出：关键词只测换行没限宽，门店名等直接 `fillText` | 新增 `clip()` 单行截断（逐字回退 + 省略号）、`wrap(..., maxLines)` 末行省略号；关键词改为**先排版后绘制**，把块高算进下方字段面板位置，面板底部以 `FOOT_TOP` 为硬边界整体上移；字段值按「不与左侧标签重叠」计算可用宽度，再截断 | `TestCardLayoutGuards`（6 条）；jsdom 冒烟「所有绘制文字都在 1080×1920 画布内」；导出样本 `docs/sample-share-card-longtext.png` |
+| P1 | 分享卡片长文本可能溢出：关键词只测换行没限宽，门店名等直接 `fillText` | 新增 `clip()` 单行截断（逐字回退 + 省略号）、`wrap(..., maxLines)` 末行省略号；改成**自上而下一次性分配高度预算**：关键词先排版拿真实行数 → 描述行数按剩余空间裁剪 → 人格面板高度自适应；字段值按「不与左侧标签重叠」计算可用宽度，再截断 | `TestCardLayoutGuards`（9 条）；jsdom 冒烟与浏览器验收的面板边界断言；导出样本 `docs/sample-share-card-longtext.png` |
 | P2 | 生成时间可能暴露在分享图片中，建议提供隐藏选项 | 「生成时间」变为分享卡片第 4 个字段，**默认隐藏**、纳入隐私默认值与「复制卡片配置」；未勾选时页脚也不再出现具体时刻 | `TestGeneratedAtHidden`（4 条）、jsdom 冒烟新增 4 项生成时间断言 |
-| P2 | 建议增加 Playwright 浏览器测试（375px、长商品名、隐私模式、六章滚动、PNG 导出） | 新增 `scripts/browser_check.js`：Chromium 375×812 视口下检查横向溢出、逐元素滚动验证 36 个渐显元素、长文本抗溢出、隐私开关、以及导出 PNG 的签名 / 尺寸 / 元数据块；CI 新增 `browser` job 并上传导出样本 | 本机 35 项全通过；`docs/sample-share-card*.png` 即该脚本产出的实物 |
+| P2 | 建议增加 Playwright 浏览器测试（375px、长商品名、隐私模式、六章滚动、PNG 导出） | 新增 `scripts/browser_check.js`：Chromium 375×812 视口下检查横向溢出、逐元素滚动验证 36 个渐显元素、长文本抗溢出、隐私开关、以及导出 PNG 的签名 / 尺寸 / 元数据块；CI 新增 `browser` job 并上传导出样本 | 本机 44 项全通过；`docs/sample-share-card*.png` 即该脚本产出的实物 |
 
-两处自查出的坑（都会记进本节，避免下次重犯）：
+三处自查出的坑（都会记进本节，避免下次重犯）：
 
 - 浏览器的横向溢出检查一开始把可达性「跳到正文」链接（刻意放在 `left:-9999px`）判成溢出，
   改为忽略完全位于左边界外的元素，并以 `scrollWidth <= innerWidth` 作为页面级判据。
 - 「六章滚动」最初按章断言 `.reveal` 数量，实测出现 `视口内 0/8` 的**空转假通过**
   （整屏章节居中滚动后没有任何 `.reveal` 中心进入视口）。改为逐个元素滚到视口正中后
   等它拿到 `.is-visible` 且透明度收敛到 1，并补一条「加载时首屏外内容确实未显现」的防空转断言。
+- **画布内的版式溢出，文字框「在画布内」这类断言查不出来**。人格面板原本写死 470 高，
+  而「人格名占两行 + 描述占三行」时描述第 3 行会落到面板外面。我一开始只看文字框有没有越出
+  1080×1920，结论是「全部通过」；后来用 Chromium 直接读导出 PNG 的像素、再拦截 Canvas 绘制调用，
+  才量出描述第 3 行在 `y869~902` 而面板底边是 `y856`、确实画到了面板外。
+  修法是把版式改成**自上而下一次性分配高度预算**：关键词先排版拿真实行数 → 算出剩余空间 →
+  描述行数按剩余空间自动裁剪 → 人格面板高度随之自适应，并在最后夹一次上限。
+  同时让页面把量出来的几何挂到 `window.__mcdCardLayout`（只含数字、不含原文），
+  jsdom 与浏览器两套验收都据此断言「描述没跑出面板 / 胶囊没压到字段面板 / 字段面板没越过页脚」。
+  默认数据下版式字节级不变（导出 PNG 与修复前完全一致），只有出现超长文本时才会触发裁剪。
 
-本轮测试总量：单元测试 **182 条**（上一阶段 154 → +28，新增 `TestPublicMode` 14、
-`TestGeneratedAtHidden` 4、`TestCardLayoutGuards` 6、`TestCliStory` 4）、
-jsdom 冒烟 **93 项**（四条路径：增强 / 降级 / 恶意数据 / 公开版）、
-真实浏览器验收 **35 项**（Chromium 375×812）。CI 三个 job 全绿：`unittest`（Python 3.9–3.13）、
-`story`（jsdom）、`browser`（Playwright，上传 PNG artifact）。
+本轮测试总量：单元测试 **185 条**（上一阶段 154 → +31，新增 `TestPublicMode` 14、
+`TestGeneratedAtHidden` 4、`TestCardLayoutGuards` 9、`TestCliStory` 4）、
+jsdom 冒烟 **114 项**（四条路径：增强 / 降级 / 恶意数据 / 公开版，含面板边界 16 项）、
+真实浏览器验收 **44 项**（Chromium 375×812，含面板边界 9 项）。
+CI 三个 job 全绿：`unittest`（Python 3.9–3.13）、`story`（jsdom）、`browser`（Playwright，上传 PNG artifact）。
 
 ## 十一、WorkBuddy 在项目中的实际作用
 

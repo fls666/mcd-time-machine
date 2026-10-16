@@ -75,6 +75,26 @@ function hostileCopy(src, outPath) {
   return outPath;
 }
 
+/* 画布内部的版式边界。
+ * 真实浏览器的字体度量和 jsdom 的估算不同，所以「文字有没有跑出自己的面板」
+ * 必须在真机引擎里再量一次——页面脚本绘制时会把几何挂在 window.__mcdCardLayout。 */
+async function panelBounds(page, label) {
+  const L = await page.evaluate(() => window.__mcdCardLayout || null);
+  if (!L) {
+    check(`[${label}] 卡片布局钩子可用`, false, 'window.__mcdCardLayout 未设置');
+    return;
+  }
+  check(`[${label}] 人格描述没有跑出人格面板`,
+    L.descBottom === null || L.descBottom <= L.personaPanel.bottom,
+    `descBottom=${L.descBottom} panelBottom=${L.personaPanel.bottom}`);
+  check(`[${label}] 关键词胶囊块没有压到字段面板`,
+    L.chipsBottom <= L.rowsPanel.top,
+    `chipsBottom=${L.chipsBottom} rowsTop=${L.rowsPanel.top}`);
+  check(`[${label}] 字段面板没有越过页脚上沿`,
+    L.rowsPanel.bottom <= L.footTop,
+    `rowsBottom=${L.rowsPanel.bottom} footTop=${L.footTop}`);
+}
+
 /* PNG 结构解析：拿尺寸 + 列出所有 chunk 类型（用来确认没有写元数据） */
 function parsePng(buf) {
   if (buf.length < 24 || buf.slice(0, 8).toString('hex') !== '89504e470d0a1a0a') return null;
@@ -289,6 +309,7 @@ async function downloadCard(page, savePath) {
   check('[导出] PNG 不含元数据块', meta.length === 0, meta.join(','));
   check('[个人版] 顶部有个人完整版横幅',
     await page.locator('.mode-banner.personal').count() === 1);
+  await panelBounds(page, '个人版');
 
   // ---------------------------------------------------- 长文本（抗溢出）
   const hostilePath = path.join(tmpDir, 'story-long.html');
@@ -315,6 +336,7 @@ async function downloadCard(page, savePath) {
     check('[长文本] 导出仍是 1080x1920',
       png2 && png2.dims.width === 1080 && png2.dims.height === 1920,
       png2 ? JSON.stringify(png2.dims) : 'null');
+    await panelBounds(page, '长文本');
   } else {
     check('[长文本] 已生成超长文本页面', false, '未找到内联数据块');
   }
@@ -348,6 +370,7 @@ async function downloadCard(page, savePath) {
     check('[公开版] 导出仍是 1080x1920',
       png3 && png3.dims.width === 1080 && png3.dims.height === 1920,
       png3 ? JSON.stringify(png3.dims) : 'null');
+    await panelBounds(page, '公开版');
   }
 
   check('[页面] 没有脚本错误', errors.length === 0, errors.slice(0, 3).join(' | '));

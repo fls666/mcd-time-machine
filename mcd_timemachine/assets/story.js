@@ -216,14 +216,6 @@
     return lines;
   }
 
-  function drawWrapped(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
-    var lines = wrap(ctx, text, maxWidth, maxLines);
-    for (var i = 0; i < lines.length; i++) {
-      ctx.fillText(lines[i], x, y + i * lineHeight);
-    }
-    return y + lines.length * lineHeight;
-  }
-
   /* 关键词胶囊：单个词先按可用宽度截断，再据此算胶囊宽度，
    * 保证任何长度都不会顶出卡片左右边界。 */
   function chip(ctx, text, x, y, padX, height, maxWidth) {
@@ -275,75 +267,126 @@
     ctx.fillStyle = "rgba(255,255,255,.30)";
     ctx.fillRect(PAD, 312, 300, 4);
 
-    // 口味人格
-    var panelY = 386;
+    /* 版式预算：人格面板 / 年度关键词 / 字段面板自上而下一次性分配。
+     *
+     * 旧实现把人格面板写死成 470 高、字段面板位置只按关键词首行推算，
+     * 结果「人格名占两行 + 描述占三行」时描述会落到面板外面（实测第 3 行
+     * 在 y869~902，而面板底边是 y856）。这里改成先量后放：
+     * 关键词先排版拿真实行数，再把人脸面板描述的行数按剩余空间自动裁剪，
+     * 除非最终无条件越出 FOOT_TOP。 */
+    var words = cfg.keywords && cfg.keywords.length ? cfg.keywords : ["还在探索中"];
+    var rows = cfg.rows || [];
+    var BODY_TOP = 386;
+    var GAP_TITLE = 94;      // 人格面板底 → 关键词标题基线
+    var GAP_CHIP = 50;       // 关键词标题基线 → 首颗胶囊顶
+    var GAP_ROWS = 26;       // 胶囊块底 → 字段面板顶
+    var CHIP_H = 68;
+    var CHIP_STEP = 84;
+    var ROW_STEP = 78;
+    var PERSONA_MIN_H = 470; // 常规数据下的观感高度，放得下就取它
+
+    // 1) 关键词先排版（只测量、不绘制）：拿到真实行数，才算得准它占掉多少高度
+    ctx.font = font(34, 600);
+    var chips = [];
+    var kx = PAD;
+    var chipRow = 0;
+    for (var w = 0; w < words.length && w < 4; w++) {
+      var word = String(words[w]);
+      var need = ctx.measureText(clip(ctx, word, INNER - 56)).width + 56;
+      if (kx + need > CARD_W - PAD) { kx = PAD; chipRow += 1; }
+      chips.push({ text: word, x: kx, row: chipRow });
+      kx += need + 18;
+    }
+    var chipsH = chipRow * CHIP_STEP + CHIP_H;
+    var rowsH = ROW_STEP * rows.length + 74;
+
+    // 2) 剩下的高度留给人格面板
+    var budget = FOOT_TOP - BODY_TOP - GAP_TITLE - GAP_CHIP - GAP_ROWS - chipsH - rowsH;
+    ctx.font = font(86, 800);
+    var personaLines = wrap(ctx, cfg.persona, INNER - 96, 2);
+    var nameBlock = 216 + personaLines.length * 100;   // 面板顶 → 描述首行基线
+    var maxDesc = 3;
+    var descLines = [];
+    var contentNeed = 0;
+    for (;;) {
+      descLines = maxDesc > 0 ? wrap(ctx, cfg.personaDesc, INNER - 96, maxDesc) : [];
+      contentNeed = nameBlock + descLines.length * 48 + 40;
+      if (contentNeed <= budget || maxDesc === 0) break;
+      maxDesc -= 1;
+    }
+    if (contentNeed > budget) {
+      // 连一行名字都放不下：人格名退回一行、描述让位（名字比描述重要）
+      personaLines = wrap(ctx, cfg.persona, INNER - 96, 1);
+      nameBlock = 216 + personaLines.length * 100;
+      descLines = [];
+      contentNeed = nameBlock + 40;
+    }
+    var personaH = Math.max(contentNeed, Math.min(PERSONA_MIN_H, budget));
+    personaH = Math.min(personaH, budget);   // 任何情况下都不越过 FOOT_TOP
+
+    var titleY = BODY_TOP + personaH + GAP_TITLE;
+    var chipTop = titleY + GAP_CHIP;
+    var rowsTop = chipTop + chipsH + GAP_ROWS;
+
+    // 3) 口味人格
     ctx.fillStyle = "rgba(255,255,255,.12)";
-    roundRect(ctx, PAD, panelY, INNER, 470, 36);
+    roundRect(ctx, PAD, BODY_TOP, INNER, personaH, 36);
     ctx.fill();
 
     ctx.fillStyle = soft;
     ctx.font = font(32, 500);
-    ctx.fillText("我的口味人格", 132, panelY + 78);
+    ctx.fillText("我的口味人格", 132, BODY_TOP + 78);
 
     ctx.fillStyle = "#FFC72C";
     ctx.font = font(86, 800);
-    // 最多两行；截断时末行补省略号，不会溢出面板
-    var personaLines = wrap(ctx, cfg.persona, INNER - 96, 2);
     for (var i = 0; i < personaLines.length; i++) {
-      ctx.fillText(personaLines[i], 132, panelY + 186 + i * 100);
+      ctx.fillText(personaLines[i], 132, BODY_TOP + 186 + i * 100);
     }
 
-    ctx.fillStyle = "rgba(255,255,255,.90)";
-    ctx.font = font(34, 400);
-    var descTop = panelY + 186 + personaLines.length * 100 + 30;
-    drawWrapped(ctx, cfg.personaDesc, 132, descTop, INNER - 96, 48, 3);
-
-    // 年度关键词
-    ctx.fillStyle = soft;
-    ctx.font = font(32, 500);
-    ctx.fillText("年度关键词", PAD, 950);
-
-    // 先排版（不绘制），拿到关键词块的实际高度，再据此决定下方字段面板的位置，
-    // 保证面板底部不会压到页脚、也不会越出画布下沿
-    var words = cfg.keywords && cfg.keywords.length ? cfg.keywords : ["还在探索中"];
-    var layout = [];
-    var kx = PAD;
-    var ky = 1000;
-    ctx.font = font(34, 600);
-    for (var w = 0; w < words.length && w < 4; w++) {
-      var word = String(words[w]);
-      var label = clip(ctx, word, INNER - 56);
-      var need = ctx.measureText(label).width + 56;
-      if (kx + need > CARD_W - PAD) { kx = PAD; ky += 84; }
-      layout.push({ text: word, x: kx, y: ky });
-      kx += need + 18;
-    }
-    var rows = cfg.rows || [];
-    var panelH = 78 * rows.length + 74;
-    var panelTop = ky + 150 - 56;
-    // 布局边界：整体上移，最多上移到关键词标题下方，绝不越过画布
-    var overflow = panelTop + panelH - FOOT_TOP;
-    if (overflow > 0) {
-      var shift = Math.min(overflow, ky - 1040);
-      if (shift > 0) {
-        for (var s = 0; s < layout.length; s++) layout[s].y -= shift;
-        panelTop -= shift;
+    var descTop = BODY_TOP + 186 + personaLines.length * 100 + 30;
+    if (descLines.length) {
+      ctx.fillStyle = "rgba(255,255,255,.90)";
+      ctx.font = font(34, 400);
+      for (var j = 0; j < descLines.length; j++) {
+        ctx.fillText(descLines[j], 132, descTop + j * 48);
       }
     }
-    for (var d = 0; d < layout.length; d++) {
-      chip(ctx, layout[d].text, layout[d].x, layout[d].y, 28, 68, INNER);
+
+    // 4) 年度关键词
+    ctx.fillStyle = soft;
+    ctx.font = font(32, 500);
+    ctx.fillText("年度关键词", PAD, titleY);
+    for (var c = 0; c < chips.length; c++) {
+      chip(ctx, chips[c].text, chips[c].x, chipTop + chips[c].row * CHIP_STEP,
+        28, CHIP_H, INNER);
     }
 
-    // 字段行（只包含勾选的字段；未勾选显示「已隐藏」）
-    var ry = panelTop + 56;
+    /* 测试钩子：只暴露几何，不含任何原文。
+     * jsdom 与浏览器验收据此断言「描述没跑出面板 / 胶囊没压到字段面板 / 字段面板没越过页脚」。 */
+    if (typeof window !== "undefined") {
+      window.__mcdCardLayout = {
+        personaPanel: { top: BODY_TOP, bottom: BODY_TOP + personaH },
+        personaNameLines: personaLines.length,
+        descLines: descLines.length,
+        descBottom: descLines.length
+          ? descTop + (descLines.length - 1) * 48 + 12 : null,
+        chipRows: chipRow + 1,
+        chipsBottom: chipTop + chipsH,
+        rowsPanel: { top: rowsTop, bottom: rowsTop + rowsH },
+        footTop: FOOT_TOP
+      };
+    }
+
+    // 5) 字段行（只包含勾选的字段；未勾选显示「已隐藏」）
+    var ry = rowsTop + 56;
     ctx.fillStyle = "rgba(255,255,255,.14)";
-    roundRect(ctx, PAD, panelTop, INNER, panelH, 32);
+    roundRect(ctx, PAD, rowsTop, INNER, rowsH, 32);
     ctx.fill();
 
     ctx.textBaseline = "alphabetic";
     for (var r = 0; r < rows.length; r++) {
       var row = rows[r];
-      var y = ry + r * 78;
+      var y = ry + r * ROW_STEP;
       ctx.fillStyle = soft;
       ctx.font = font(32, 500);
       ctx.fillText(row.label, 132, y);

@@ -367,7 +367,7 @@ class TestCardLayoutGuards(unittest.TestCase):
 
     def test_clip_helper_used_at_every_text_site(self):
         self.assertIn("function clip(ctx, text, maxWidth)", self.js)
-        for site in ("chip(ctx, layout[d].text, layout[d].x, layout[d].y, 28, 68, INNER)",
+        for site in ("chip(ctx, chips[c].text, chips[c].x, chipTop + chips[c].row * CHIP_STEP,",
                      "wrap(ctx, cfg.persona, INNER - 96, 2)",
                      "clip(ctx, row.text, avail)",
                      "clip(ctx, cfg.sourceLabel, INNER)"):
@@ -378,8 +378,30 @@ class TestCardLayoutGuards(unittest.TestCase):
 
     def test_keyword_block_is_measured_before_drawing(self):
         """先排版再绘制，才能把关键词块高度算进下方面板的位置。"""
-        self.assertIn("var layout = [];", self.js)
-        self.assertIn("var overflow = panelTop + panelH - FOOT_TOP;", self.js)
+        self.assertIn("var chips = [];", self.js)
+        self.assertIn(
+            "var budget = FOOT_TOP - BODY_TOP - GAP_TITLE - GAP_CHIP - GAP_ROWS - chipsH - rowsH;",
+            self.js)
+
+    def test_persona_panel_height_follows_content(self):
+        """人格面板高度必须随描述行数变化——固定 470 高时，人格名占两行的
+        情况下描述第 2、3 行会落到面板外面（实测第 3 行 y869~902 vs 面板底 856）。"""
+        self.assertIn("var personaLines = wrap(ctx, cfg.persona, INNER - 96, 2);", self.js)
+        self.assertIn("var personaH = Math.max(contentNeed, Math.min(PERSONA_MIN_H, budget));",
+                      self.js)
+        self.assertIn("personaH = Math.min(personaH, budget);", self.js)
+
+    def test_persona_desc_is_trimmed_against_budget(self):
+        """放不下就逐行裁描述，而不是让文字越出面板。"""
+        self.assertIn("if (contentNeed <= budget || maxDesc === 0) break;", self.js)
+        self.assertIn("maxDesc -= 1;", self.js)
+
+    def test_layout_hook_exposes_geometry_only(self):
+        """测试钩子只暴露几何，不得把关键词 / 描述原文带出去。"""
+        self.assertIn("window.__mcdCardLayout = {", self.js)
+        hook = self.js.split("window.__mcdCardLayout = {", 1)[1].split("};", 1)[0]
+        for leak in ("cfg.keywords", "cfg.personaDesc", "chips[", "descLines["):
+            self.assertNotIn(leak, hook, f"测试钩子泄漏了内容：{leak}")
 
     def test_long_word_chip_is_clipped_not_overflown(self):
         self.assertIn("clip(ctx, text, Math.max(0, (maxWidth || INNER) - padX * 2))", self.js)

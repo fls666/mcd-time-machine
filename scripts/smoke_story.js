@@ -145,6 +145,30 @@ function checkBounds(boxes, label) {
     outside.slice(0, 3).map((b) => `${JSON.stringify(b.t)} x=${b.x} w=${Math.round(b.w)}`).join(' | '));
 }
 
+/* 面板边界：脚本在绘制时把量出来的几何挂在 window.__mcdCardLayout 上。
+ * 这是「文字没跑出卡片 / 没互相压叠」的直接证据——光看文字框在画布内不够，
+ * 文字还得待在自己的面板里。（旧实现正是这里出问题：人格描述第 3 行
+ * 落在面板外，而所有文字框都还在 1080x1920 之内，因此旧断言查不出来。） */
+function checkPanelBounds(doc, label) {
+  const L = doc.defaultView && doc.defaultView.__mcdCardLayout;
+  if (!L) {
+    check(`[${label}] 卡片布局钩子可用`, false, 'window.__mcdCardLayout 未设置');
+    return;
+  }
+  check(`[${label}] 人格描述没有跑出人格面板`,
+    L.descBottom === null || L.descBottom <= L.personaPanel.bottom,
+    `descBottom=${L.descBottom} panelBottom=${L.personaPanel.bottom}`);
+  check(`[${label}] 关键词胶囊块没有压到字段面板`,
+    L.chipsBottom <= L.rowsPanel.top,
+    `chipsBottom=${L.chipsBottom} rowsTop=${L.rowsPanel.top}`);
+  check(`[${label}] 字段面板没有越过页脚上沿`,
+    L.rowsPanel.bottom <= L.footTop,
+    `rowsBottom=${L.rowsPanel.bottom} footTop=${L.footTop}`);
+  check(`[${label}] 人格面板起于 y386 且高度为正`,
+    L.personaPanel.top === 386 && L.personaPanel.bottom > L.personaPanel.top,
+    JSON.stringify(L.personaPanel));
+}
+
 function commonChecks(doc, errors, drawn, boxes, label) {
   check(`[${label}] 脚本无运行时异常`, errors.length === 0, errors.join(' | '));
   for (let i = 1; i <= 6; i++) {
@@ -211,6 +235,7 @@ function commonChecks(doc, errors, drawn, boxes, label) {
   doc.getElementById('downloadCard').click();
   doc.getElementById('copyConfig').click();
   check(`[${label}] 导出/复制按钮无异常`, errors.length === 0, errors.join(' | '));
+  checkPanelBounds(doc, label);
 }
 
 // ---------------------------------------------------------- C 恶意数据源（P1）
@@ -321,6 +346,13 @@ setTimeout(() => {
         storeDrawn.length > 0, storeDrawn.slice(0, 2).join(' | '));
 
       checkBounds(hostile.boxes, '恶意');
+      checkPanelBounds(doc3, '恶意');
+      // 这条是回归护栏：超长人格名 + 超长描述会把人脸面板「撑破」，
+      // 修复后描述行数必须按预算被裁掉，而不是画到面板外面去
+      const hL = hostile.dom.window.__mcdCardLayout;
+      check('[恶意] 超长描述被按预算裁剪而不是越出面板',
+        !hL || hL.descBottom === null || hL.descBottom <= hL.personaPanel.bottom,
+        hL ? `描述行数=${hL.descLines} descBottom=${hL.descBottom} panelBottom=${hL.personaPanel.bottom}` : '');
       hostile.dom.window.close();
 
       // ------------------------------------------------ D 公开分享版（P1）
@@ -357,6 +389,7 @@ setTimeout(() => {
           doc4.querySelectorAll("a[href='report.html']").length === 0);
         check('[公开版] 脚本无运行时异常', pub.errors.length === 0, pub.errors.join(' | '));
         checkBounds(pub.boxes, '公开版');
+        checkPanelBounds(doc4, '公开版');
         pub.dom.window.close();
 
         console.log(failures === 0 ? '\n全部通过' : `\n${failures} 项失败`);

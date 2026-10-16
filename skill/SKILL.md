@@ -25,8 +25,11 @@ description: 麦麦时光机。当用户想回顾自己的麦当劳消费历史�
 > **禁止**直接粘贴给用户、复制到对话里、或上传到任何公开渠道（含 Issue、讨论区、截图）。
 > 需要对外反馈结构时，只能运行 `mcdtm share` 生成脱敏后的 `share.json`，
 > 并**提醒用户自己先通读一遍**再决定是否分享——脱敏无法保证覆盖所有未知字段。
-> 同理：`story.html` 内嵌了完整订单统计结果，**对外分享只能发故事页里导出的 `share-card.png`**，
-> 不要直接转发 HTML 文件（`report.html` 亦同）。
+> 同理：`story.html` 内嵌了完整订单统计结果，**不要直接转发 HTML 文件**（`report.html` 亦同）。
+> 对外分享走两条路：① 发故事页第 6 章导出的 `share-card.png`（金额 / 门店 / 日期 / 生成时间默认隐藏）；
+> ② 用 `mcdtm story --privacy public` 生成**生成期脱敏**的公开分享版——金额、门店名、到日日期
+> 在渲染时就换成占位符，文件里不含原值（只保留「年-月」粒度）。
+> 注意页面上的「隐私浏览」开关只是**前端临时遮挡**，原始数据仍在文件中，不能当作脱敏手段。
 
 ### 第一步：拉数据
 
@@ -63,7 +66,11 @@ description: 麦麦时光机。当用户想回顾自己的麦当劳消费历史�
 mcdtm fetch      # 拉数据
 mcdtm analyze    # 生成 report.md / report.html / story.html / profile.json
 mcdtm story      # 只重刷沉浸式故事页（不联网、不重算）
+mcdtm story --privacy public   # 生成公开分享版：敏感值在生成期就不写入文件
 ```
+
+`--privacy` 写在子命令前后都可以，默认 `personal`（个人完整版，含原始数据）；
+`report.md` / `report.html` / `profile.json` **始终是完整报告**，不受该参数影响。
 
 若用户只想看结论，可直接在对话里输出要点摘要，并提示 HTML 报告可截图分享。
 

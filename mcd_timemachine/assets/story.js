@@ -159,6 +159,35 @@
   var INNER = CARD_W - PAD * 2;      // 912
   var FOOT_TOP = CARD_H - 260;       // 页脚上沿，正文块不得越过
 
+  /* Emoji / 组合字符按「一个字素」取值：直接按 UTF-16 码元切片会把代理对劈成
+   * 半个字符（画出来是方框），也会把 👨‍👩‍👧‍👦 这类 ZWJ 组合拆散。
+   * 这里只做最小必要处理：整码点 + 变体选择符 + ZWJ 串联 + 组合附加符号。 */
+  var ZWJ_CH = "\u200d";
+  var VS_RE = /[\uFE00-\uFE0F\u20E3\u0300-\u036f]/;
+
+  function codePointAt(s, i) {
+    var code = s.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < s.length) return s.substr(i, 2);
+    return s.charAt(i);
+  }
+
+  function graphemeAt(s, i) {
+    var out = codePointAt(s, i);
+    var j = i + out.length;
+    while (j < s.length) {
+      var ch = codePointAt(s, j);
+      if (ch !== ZWJ_CH && !VS_RE.test(ch)) break;
+      out += ch;
+      j += ch.length;
+      if (ch === ZWJ_CH && j < s.length) {   // ZWJ 后面跟的那个码点属于同一字素
+        var next = codePointAt(s, j);
+        out += next;
+        j += next.length;
+      }
+    }
+    return out;
+  }
+
   /* 单行截断：超出 maxWidth 时逐字回退并补省略号。
    * 商品名 / 门店名长度不可控，直接 fillText 会溢出画布或压到相邻元素上。 */
   function clip(ctx, text, maxWidth) {
@@ -168,8 +197,10 @@
     var ell = "…";
     var ellW = ctx.measureText(ell).width;
     var out = "";
-    for (var i = 0; i < s.length; i++) {
-      var next = out + s[i];
+    for (var i = 0; i < s.length;) {
+      var ch = graphemeAt(s, i);
+      var next = out + ch;
+      i += ch.length;
       if (ctx.measureText(next).width + ellW > maxWidth) break;
       out = next;
     }
@@ -191,14 +222,16 @@
     ctx.closePath();
   }
 
-  /* 中英混排换行：CJK 逐字断行，连续 ASCII 视为整体，避免单词被劈开。
+  /* 中英混排换行：CJK 逐字断行，连续 ASCII 视为整体，避免单词被劈开；
+   * Emoji 按字素断行，不会把代理对或 ZWJ 组合拆散。
    * 超出 maxLines 时末行补省略号——宁可明示截断，也不静默吞掉内容。 */
   function wrap(ctx, text, maxWidth, maxLines) {
     var lines = [];
     var line = "";
     var s = String(text == null ? "" : text);
-    for (var i = 0; i < s.length; i++) {
-      var ch = s[i];
+    for (var i = 0; i < s.length;) {
+      var ch = graphemeAt(s, i);
+      i += ch.length;
       if (ctx.measureText(line + ch).width <= maxWidth || line === "") {
         line += ch;
       } else {
@@ -438,12 +471,15 @@
                  text: f.value || "公开版未写入" };
       }
       var on = !!(toggles[key] && toggles[key].checked);
+      // 值为空或只有空白时不要画出一行空白（真实数据里 generated 可能是空串）
+      var value = f.value === undefined || f.value === null ? "" : String(f.value);
+      var shown = value.trim() ? value : "—";
       return {
         key: key,
         label: f.label,
         hidden: !on,
         available: true,
-        text: on ? f.value : (f.hidden_text || "已隐藏")
+        text: on ? shown : (f.hidden_text || "已隐藏")
       };
     }
 

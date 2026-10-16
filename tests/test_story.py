@@ -327,6 +327,236 @@ class TestPublicMode(unittest.TestCase):
                          [s["name"] for s in self.profile["stores"] if s.get("name")])
 
 
+def _walk_scalars(node, key=""):
+    """遍历出 (字段名, 标量值)，用于检查「每个数值字段都被显式分类」。"""
+    if isinstance(node, dict):
+        for k, value in node.items():
+            for item in _walk_scalars(value, str(k)):
+                yield item
+    elif isinstance(node, list):
+        for value in node:
+            for item in _walk_scalars(value, key):
+                yield item
+    else:
+        yield key, node
+
+
+class TestStructuredRedaction(unittest.TestCase):
+    """第七轮审查 P1：脱敏前移到**渲染之前**，判据是「字段」而不是「文本长相」。
+
+    原来的做法是渲染完再拿正则扫 HTML：规则依赖「金额一定写成 ¥123.00」这类假设，
+    将来新增一个不带 ¥ 的金额字段、或一个没进门店名单的地址字段就可能漏出去。
+    """
+
+    def setUp(self):
+        self.profile = _profile("mcp")
+
+    def _augment(self):
+        """造一份「将来可能长这样」的 profile：裸金额 / 地址 / 订单号 / 电话 / 坐标。"""
+        import copy
+
+        p = copy.deepcopy(self.profile)
+        p["summary"]["yearly_outlay"] = 1288.4          # 不带 ¥ 符号的金额字段
+        p["coverage"]["delivery_address"] = "深圳市南山区科技园路 1 号 3 栋 502"
+        p["last_order"] = {
+            "order_no": "MCD202606270001",
+            "phone": "13800138000",
+            "lat": 22.540123,
+            "lng": 114.057812,
+            "note": "备注：送到公司前台，共 1288.40 元",
+        }
+        p["memories"].append({
+            "title": "新的回忆",
+            "text": "2026-06-27 那天花了 ¥1,234.50，合计 1234.50 元。",
+        })
+        return p
+
+    # ---------------------------------------------------------- 第一层：结构化
+    def test_every_numeric_field_is_registered_or_redacted(self):
+        """数值字段必须被显式分类：登记为安全计数，或按金额抹掉。
+
+        新增数值字段时这条会失败，逼作者做一次判断——这正是「结构化脱敏」
+        相对「按文本长相扫」的价值：漏掉的可能性从「没写正则」变成「测试报错」。
+        """
+        from mcd_timemachine.story import _SAFE_NUMBER_KEYS, redact_profile
+
+        profile = self._augment()
+        redacted = redact_profile(profile)
+        offenders = []
+        for key in sorted({k for k, _v in _walk_scalars(profile)}):
+            values = [v for k, v in _walk_scalars(profile) if k == key]
+            if not any(isinstance(v, (int, float)) and not isinstance(v, bool)
+                       for v in values):
+                continue
+            if key in _SAFE_NUMBER_KEYS:
+                continue
+            after = [v for k, v in _walk_scalars(redacted) if k == key]
+            # 脱敏形态二选一：命名字段的置「已隐藏」，金额字段置「金额已隐藏」
+            if not after or not all(v in ("金额已隐藏", "已隐藏") for v in after):
+                offenders.append((key, after[:2]))
+        self.assertEqual(offenders, [], f"这些数值字段既没登记也没脱敏：{offenders}")
+
+    def test_unregistered_money_field_is_redacted(self):
+        """不带 ¥ 符号的金额字段（yearly_outlay）同样要抹掉。"""
+        from mcd_timemachine.story import redact_profile
+
+        redacted = redact_profile(self._augment())
+        self.assertEqual(redacted["summary"]["yearly_outlay"], "金额已隐藏")
+        self.assertNotIn("1288.4", json.dumps(redacted, ensure_ascii=False))
+
+    def test_sensitive_keys_are_dropped_by_name(self):
+        """地址 / 订单号 / 电话 / 坐标这类字段名命中即整体移除，不依赖值长什么样。"""
+        from mcd_timemachine.story import redact_profile
+
+        redacted = redact_profile(self._augment())
+        self.assertEqual(redacted["coverage"]["delivery_address"], "已隐藏")
+        for key in ("order_no", "phone", "lat", "lng"):
+            self.assertEqual(redacted["last_order"][key], "已隐藏", key)
+
+    def test_text_values_are_scrubbed_before_rendering(self):
+        """自由文本里的金额（含「元」后缀）与到日日期在数据层就被抹掉。"""
+        from mcd_timemachine.story import redact_profile
+
+        redacted = json.dumps(redact_profile(self._augment()), ensure_ascii=False)
+        note = redacted[redacted.index("备注"):redacted.index("备注") + 60]
+        self.assertNotIn("1288.40", note)
+        self.assertIn("金额已隐藏", note)
+        for raw in ("¥1,234.50", "1234.50 元", "2026-06-27", "MCD202606270001"):
+            self.assertNotIn(raw, redacted, raw)
+
+    def test_store_count_kept_but_name_gone(self):
+        """门店名抹掉，但「去过几次」这种计数要留着，否则第 3、5 章会残缺。"""
+        from mcd_timemachine.story import redact_profile, store_names
+
+        redacted = redact_profile(self.profile)
+        dump = json.dumps(redacted, ensure_ascii=False)
+        for name in store_names(self.profile):
+            self.assertNotIn(name, dump)
+        self.assertTrue(redacted["stores"], "门店列表不应被整体删掉")
+        for store in redacted["stores"]:
+            self.assertEqual(store["name"], "门店已隐藏")
+            self.assertIsInstance(store["count"], int)
+
+    def test_redact_profile_does_not_mutate_input(self):
+        """脱敏返回副本：调用方的 profile 必须原样可用（个人版还要用它渲染）。"""
+        from mcd_timemachine.story import redact_profile
+
+        before = json.dumps(self.profile, ensure_ascii=False, sort_keys=True)
+        redact_profile(self.profile)
+        self.assertEqual(json.dumps(self.profile, ensure_ascii=False, sort_keys=True), before)
+
+    # ---------------------------------------------------------- 第二、三层
+    def test_layer_one_and_two_leave_no_residue(self):
+        """关掉第三层自检，公开版仍然零残留——证明前两层不是靠兜底才过关。"""
+        from mcd_timemachine.story import scan_leaks
+
+        two_layers = render_story(self.profile, "public", value_sweep=False)
+        self.assertEqual(scan_leaks(two_layers, self.profile), [])
+        # 真实管线里第三层因此不该改动任何东西
+        self.assertEqual(render_story(self.profile, "public"), two_layers)
+
+    def test_body_rendered_from_redacted_data_is_clean(self):
+        """第一层单独就够：用脱敏后的数据渲染正文，正文里没有原值。"""
+        from mcd_timemachine.story import _body_of, redact_profile, scan_leaks, store_names
+
+        source = self._augment()
+        clean = redact_profile(source)
+        body = _body_of(clean, build_story_payload(clean, "public"), "public")
+        self.assertNotIn("¥", body)
+        self.assertIsNone(re.search(r"\d{4}-\d{2}-\d{2}", body))
+        for name in store_names(source):
+            self.assertNotIn(name, body)
+        self.assertEqual(scan_leaks(body, source), [])
+
+    def test_public_html_has_zero_leak_on_augmented_profile(self):
+        from mcd_timemachine.story import scan_leaks
+
+        profile = self._augment()
+        html = render_story(profile, "public")
+        self.assertEqual(scan_leaks(html, profile), [])
+        for raw in ("深圳市南山区科技园路", "13800138000", "MCD202606270001",
+                    "22.540123", "114.057812", "1288.4"):
+            self.assertNotIn(raw, html, raw)
+
+    def test_scan_leaks_detects_a_planted_leak(self):
+        """自检本身要有效：故意把原值拼回 HTML，必须被抓到。"""
+        from mcd_timemachine.story import scan_leaks
+
+        spend = self.profile["summary"]["display_spend"]
+        planted = f"<p>累计消费 ¥{spend:,.2f}</p>"
+        self.assertTrue(scan_leaks(planted, self.profile), "自检漏掉了拼回去的金额")
+        self.assertEqual(scan_leaks("<p>没有敏感值</p>", self.profile), [])
+
+    def test_sensitive_tokens_skip_too_short_values(self):
+        """过短的金额形态不参与比对，否则会把页面上无关的数字当成泄漏。"""
+        from mcd_timemachine.story import sensitive_tokens
+
+        tokens = sensitive_tokens({"summary": {"avg_order": 3.0}})
+        self.assertNotIn("3.0", tokens)
+        self.assertNotIn("3.00", tokens)
+        self.assertIn("¥3.00", tokens)          # 带货币符号的形态要留下
+
+    def test_public_keeps_year_but_not_day(self):
+        """年份要留在标题里（range_end 被抹掉后不能再从它推年份）。"""
+        html = render_story(self.profile, "public")
+        year = (self.profile["coverage"].get("range_end") or "")[:4]
+        self.assertTrue(year.isdigit(), year)
+        self.assertIn(f"你的 {year} 麦麦年度回忆", html)
+
+    def test_personal_mode_is_untouched_by_the_new_layers(self):
+        """个人版一个字符都不该被新逻辑改动：金额、门店、日期必须原样可见。"""
+        profile = self._augment()
+        html = render_story(profile, "personal")
+        self.assertIn("¥", html)
+        self.assertEqual(len(re.findall(r"\d{4}-\d{2}-\d{2}", html)),
+                         len(re.findall(r"\d{4}-\d{2}-\d{2}", render_story(profile))))
+
+    def test_sensitive_and_money_key_helpers(self):
+        from mcd_timemachine.story import is_money_key, is_sensitive_key
+
+        for key in ("address", "delivery_address", "order_no", "orderId", "phone",
+                    "mobile", "lat", "lng", "openid", "收货地址", "手机号"):
+            self.assertTrue(is_sensitive_key(key), key)
+        for key in ("store", "count", "total_orders", "month", "spend_basis",
+                    "amount_source", "total_items", "with_date"):
+            self.assertFalse(is_sensitive_key(key), key)
+            self.assertFalse(is_money_key(key), key)
+        self.assertTrue(is_money_key("total_spend"))
+        self.assertTrue(is_money_key("spend"))
+        self.assertTrue(is_money_key("avg_delivery_fee"))
+        self.assertTrue(is_money_key("消费金额"))
+
+
+class TestExtremeTextGuards(unittest.TestCase):
+    """第七轮审查 P2：极端字符（空值 / Emoji / 超长英文 / 混排）不得弄坏版式。"""
+
+    def setUp(self):
+        self.js = (Path(__file__).resolve().parent.parent
+                   / "mcd_timemachine" / "assets" / "story.js").read_text(encoding="utf-8")
+
+    def test_text_is_walked_by_grapheme_cluster(self):
+        """按字素截断：不能把代理对劈成半个字符（会画成方框），
+        也不能把 👨‍👩‍👧‍👦 这类 ZWJ 组合拆散。"""
+        self.assertIn("function graphemeAt(s, i)", self.js)
+        self.assertIn("function codePointAt(s, i)", self.js)
+        self.assertIn('var ZWJ_CH = "\\u200d";', self.js)
+        # 旧的「按 UTF-16 码元切片」写法必须彻底消失
+        self.assertNotIn("var next = out + s[i];", self.js)
+        self.assertNotIn("var ch = s[i];", self.js)
+
+    def test_clip_and_wrap_share_the_grapheme_walker(self):
+        # 两处都必须按字素步进（clip 单行截断、wrap 换行）
+        self.assertEqual(self.js.count("= graphemeAt(s, i)"), 2)
+
+    def test_blank_field_value_falls_back_to_dash(self):
+        """值只有空白时不要画出一行空白。"""
+        self.assertIn('var shown = value.trim() ? value : "—";', self.js)
+
+    def test_empty_persona_and_keywords_have_fallbacks(self):
+        self.assertIn('DATA.persona || "口味待探索"', self.js)
+        self.assertIn('["还在探索中"]', self.js)
+
+
 class TestGeneratedAtHidden(unittest.TestCase):
     """P2：生成时间默认隐藏，只有主动勾选才进分享图片。"""
 

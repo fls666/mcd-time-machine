@@ -1,10 +1,12 @@
 /* 故事页（story.html）前端冒烟测试。
  *
- * 用 jsdom 真跑一遍页面脚本，覆盖四条路径：
+ * 用 jsdom 真跑一遍页面脚本，覆盖五条路径：
  *   A. 增强路径：注入 IntersectionObserver，验证渐显、章节圆点、条形图初始化；
  *   B. 降级路径：不注入，验证脚本失效时六章内容依然完整可读。
  *   C. 恶意数据路径：把商品名 / 门店名换成 HTML 注入载荷、带引号的属性逃逸载荷
  *      与超长中文，验证分享预览只以纯文本呈现，且绘制文字不越出画布。
+ *   E. 极端数据路径：空字符串 / 空关键词 / 超长英文（无空格）/ Emoji（含 ZWJ 组合）
+ *      / 中英混排 / 四项字段全开，验证不崩、不溢出、面板几何仍成立。
  *   D. 公开分享版（可选第二个参数）：验证金额 / 门店 / 到日日期确实不在文件里。
  * 各路径都会校验：隐私默认值（四项默认隐藏）、生成时间默认不入图、绘制文字在画布内。
  *
@@ -259,6 +261,38 @@ function hostileSource() {
   return html.replace(m[0], m[1] + raw + m[3]);
 }
 
+// ------------------------------------------------- E 极端数据源（P2）
+// 长文本 / Emoji / 中英混排 / 空字符串，都是「字体度量与常规数据不同」的输入，
+// 最容易让按预算分配的版式算错。这里让四项字段全开（行数最多、每行最长）。
+const LONG_ASCII = 'Supercalifragilisticexpialidocious'.repeat(6);
+const EMOJI = '😋🍟🥤🔥🎉'.repeat(8);
+const ZWJ_EMOJI = '👨‍👩‍👧‍👦🏳️‍🌈👩‍💻🧑‍🍳'.repeat(6);
+const MIXED = 'Big Mac 巨无霸 x2 + 麦辣鸡翅 Spicy Wings + Coca-Cola 中可乐'.repeat(6);
+
+function extremeSource() {
+  const m = html.match(/(<script id="story-data"[^>]*>)([\s\S]*?)(<\/script>)/);
+  if (!m) return null;
+  const payload = JSON.parse(m[2]);
+  payload.persona = '';                       // 空字符串
+  payload.persona_desc = '';
+  payload.keywords = [];                      // 空关键词 → 必须走兜底文案
+  payload.fields.amount.value = LONG_ASCII;
+  payload.fields.store.value = EMOJI + ZWJ_EMOJI;
+  payload.fields.date.value = MIXED;
+  payload.fields.generated.value = '   ';      // 只有空白
+  payload.privacy = { amount: true, store: true, date: true, generated: true };
+  const raw = JSON.stringify(payload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  return html.replace(m[0], m[1] + raw + m[3]);
+}
+
+/* 把四项开关全部打开（公开版的开关是禁用的，那里本来就不该有值可开）。 */
+function pressAll(doc) {
+  ['f-amount', 'f-store', 'f-date', 'f-generated'].forEach((id) => {
+    const b = doc.getElementById(id);
+    if (b && !b.disabled) b.click();
+  });
+}
+
 // -------------------------------------------------------------- A 增强路径
 const enhanced = boot(true);
 setTimeout(() => {
@@ -354,6 +388,69 @@ setTimeout(() => {
         !hL || hL.descBottom === null || hL.descBottom <= hL.personaPanel.bottom,
         hL ? `描述行数=${hL.descLines} descBottom=${hL.descBottom} panelBottom=${hL.personaPanel.bottom}` : '');
       hostile.dom.window.close();
+
+      // ------------------------------------------------ E 极端数据（P2）
+      const extremeHtml = extremeSource();
+      check('[极端] 已构造极端数据页面', !!extremeHtml);
+      if (!extremeHtml) {
+        console.log(`\n${failures} 项失败`);
+        process.exit(1);
+      }
+      const ext = boot(false, extremeHtml);
+      setTimeout(() => {
+        const docE = ext.dom.window.document;
+        check('[极端] 脚本无运行时异常', ext.errors.length === 0, ext.errors.join(' | '));
+        const E_L = ext.dom.window.__mcdCardLayout;
+        check('[极端] 卡片布局钩子可用', !!E_L);
+        // 空关键词必须回落到兜底文案，画面上不能出现空胶囊
+        check('[极端] 空关键词回落到「还在探索中」',
+          ext.drawn.indexOf('还在探索中') >= 0, ext.drawn.slice(0, 6).join(' | '));
+        // 人格名为空字符串：不崩，且回落到固定文案（绝不画空串）
+        check('[极端] 人格名为空时回落到「口味待探索」',
+          E_L && E_L.personaNameLines === 1 && ext.drawn.indexOf('口味待探索') >= 0,
+          E_L ? '行数=' + E_L.personaNameLines : '无钩子');
+
+        const pE = JSON.parse(docE.getElementById('story-data').textContent);
+        // 四项全开：每个非空字段的值都必须被画进图片（截断后以原值为前缀）
+        const missing = [];
+        ['amount', 'store', 'date', 'generated'].forEach((k) => {
+          const raw = String(pE.fields[k].value || '').trim();
+          if (!raw) return;
+          const hit = ext.drawn.some((t) => t.length > 1 &&
+            raw.indexOf(t.replace(/…$/, '')) === 0 && t.replace(/…$/, '').length > 0);
+          if (!hit) missing.push(k + '=' + raw.slice(0, 12));
+        });
+        check('[极端] 四项全开后每个非空字段都进了图片', missing.length === 0, missing.join(' | '));
+        // 只有空白的值不能画出一行空白，要回落到「—」
+        check('[极端] 空白值回落到「—」而不是画空行',
+          ext.drawn.indexOf('—') >= 0 && ext.drawn.indexOf('   ') < 0,
+          ext.drawn.filter((t) => !t.trim()).length + ' 条空白绘制');
+
+        // 超长值必须被截断成「原值前缀 + 省略号」，而不是整段画出去
+        const clippedOf = (value) => ext.drawn.some(
+          (t) => t.slice(-1) === '…' && t.length > 1 && value.indexOf(t.slice(0, -1)) === 0);
+        check('[极端] 超长英文（无空格）被截断', clippedOf(LONG_ASCII));
+        check('[极端] Emoji 串被截断', clippedOf(EMOJI + ZWJ_EMOJI));
+        check('[极端] 中英混排被截断', clippedOf(MIXED));
+        check('[极端] 没有整段超长值被原样画出去',
+          !ext.drawn.some((t) => t.indexOf(LONG_ASCII) === 0 || t.indexOf(EMOJI) === 0));
+        // Emoji 不能被切在代理对中间（画出来会是方框）
+        const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+        check('[极端] 没有把 Emoji 劈成孤立代理对',
+          ext.drawn.every((t) => !LONE.test(t)),
+          ext.drawn.filter((t) => LONE.test(t)).slice(0, 2).join(' | '));
+
+        checkBounds(ext.boxes, '极端');
+        checkPanelBounds(docE, '极端');
+        // 关键词为空时没有胶囊行，字段面板必须仍在页脚之上
+        check('[极端] 字段面板底边仍在页脚上沿之上',
+          !!E_L && E_L.rowsPanel.bottom <= E_L.footTop,
+          E_L ? `rowsBottom=${E_L.rowsPanel.bottom} footTop=${E_L.footTop}` : '');
+        docE.getElementById('downloadCard').click();
+        docE.getElementById('copyConfig').click();
+        check('[极端] 导出/复制按钮无异常', ext.errors.length === 0, ext.errors.join(' | '));
+        ext.dom.window.close();
+      }, 400);
 
       // ------------------------------------------------ D 公开分享版（P1）
       if (!publicFile) {

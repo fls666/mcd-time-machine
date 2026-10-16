@@ -1,12 +1,14 @@
 /* 真实浏览器验收（Playwright + Chromium headless）。
  *
  * 补上 jsdom 冒烟测不到的那一层：真实布局引擎与真实 Canvas 编码。
- * 覆盖审查要求的五项：
+ * 覆盖审查要求的六项：
  *   1) 375px 手机宽度下无横向溢出；
  *   2) 较长商品名 / 门店名不撑破布局；
  *   3) 隐私模式（页面开关 + 公开分享版）；
  *   4) 六章节滚动叙事真的逐章显现；
- *   5) 导出 share-card.png 并校验尺寸与元数据。
+ *   5) 导出 share-card.png 并校验尺寸与元数据；
+ *   6) 极端字符（空字符串 / 超长英文 / Emoji / 中英混排 / 四项全开）在真实
+ *      字体度量下仍不越界——Emoji 宽度与 jsdom 估算不同，是最坏的一版输入。
  *
  * 用法（需要 playwright 与 chromium）：
  *   npm install playwright && npx playwright install chromium
@@ -70,6 +72,27 @@ function hostileCopy(src, outPath) {
   payload.fields.store.value = '麦当劳（科技园得来速餐厅）'.repeat(6) + ' · 18 次';
   payload.fields.amount.value = '累计消费 ¥123,456.78';
   payload.fields.date.value = '2025-09-19 ~ 2026-10-12';
+  const raw = JSON.stringify(payload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  fs.writeFileSync(outPath, src.replace(m[0], m[1] + raw + m[3]), 'utf8');
+  return outPath;
+}
+
+/* 极端字符：空字符串 / 空关键词 / 超长英文（无空格）/ Emoji（含 ZWJ 组合）/
+ * 中英混排 / 只有空白，并把四项字段全部打开——这是同一套版式下最坏的一版输入。
+ * jsdom 的字宽只是估算，Emoji 在真实引擎里更宽，所以必须在 Chromium 里再量一次。 */
+function extremeCopy(src, outPath) {
+  const m = src.match(/(<script id="story-data"[^>]*>)([\s\S]*?)(<\/script>)/);
+  if (!m) return null;
+  const payload = JSON.parse(m[2]);
+  payload.persona = '';
+  payload.persona_desc = '';
+  payload.keywords = [];
+  payload.fields.amount.value = 'Supercalifragilisticexpialidocious'.repeat(6);
+  payload.fields.store.value = '😋🍟🥤🔥🎉'.repeat(8) + '👨‍👩‍👧‍👦🏳️‍🌈👩‍💻🧑‍🍳'.repeat(6);
+  payload.fields.date.value =
+    'Big Mac 巨无霸 x2 + 麦辣鸡翅 Spicy Wings + Coca-Cola 中可乐'.repeat(6);
+  payload.fields.generated.value = '   ';
+  payload.privacy = { amount: true, store: true, date: true, generated: true };
   const raw = JSON.stringify(payload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
   fs.writeFileSync(outPath, src.replace(m[0], m[1] + raw + m[3]), 'utf8');
   return outPath;
@@ -339,6 +362,41 @@ async function downloadCard(page, savePath) {
     await panelBounds(page, '长文本');
   } else {
     check('[长文本] 已生成超长文本页面', false, '未找到内联数据块');
+  }
+
+  // ------------------------------------ 极端字符（空值 / Emoji / 混排，四项全开）
+  const extremePath = path.join(tmpDir, 'story-extreme.html');
+  if (extremeCopy(fs.readFileSync(personal, 'utf8'), extremePath)) {
+    await page.goto(url(extremePath), { waitUntil: 'load' });
+    await page.waitForTimeout(250);
+    await page.evaluate(() => {
+      ['f-amount', 'f-store', 'f-date', 'f-generated'].forEach((id) => {
+        const b = document.getElementById(id);
+        if (b) { b.checked = true; b.dispatchEvent(new Event('change')); }
+      });
+    });
+    await page.waitForTimeout(200);
+    const g4 = await geometry(page);
+    check('[极端 375px] 页面滚动宽度未超出视口', g4.scrollW <= g4.vw + 1,
+      `scrollWidth=${g4.scrollW}`);
+    check('[极端 375px] 没有元素越出左右边界', g4.bad.length === 0, g4.bad.join(' | '));
+    check('[极端] 页面文本里没有乱码替换字符',
+      await page.evaluate(() => document.body.innerText.indexOf('\uFFFD') < 0));
+    check('[极端] 四项字段确实都处于开启状态',
+      await page.evaluate(() => ['f-amount', 'f-store', 'f-date', 'f-generated']
+        .every((id) => document.getElementById(id).checked)));
+    // 真实字体度量下的面板边界：Emoji 比 jsdom 估算更宽，这里最容易露馅
+    await panelBounds(page, '极端');
+    const pngExtreme = path.join(keepDir || tmpDir, 'share-card-extreme.png');
+    await downloadCard(page, pngExtreme);
+    const png4 = parsePng(fs.readFileSync(pngExtreme));
+    check('[极端] 导出仍是 1080x1920',
+      png4 && png4.dims.width === 1080 && png4.dims.height === 1920,
+      png4 ? JSON.stringify(png4.dims) : 'null');
+    const meta4 = png4 ? png4.chunks.filter((c) => META.indexOf(c) >= 0) : META;
+    check('[极端] 导出 PNG 不含元数据块', meta4.length === 0, meta4.join(','));
+  } else {
+    check('[极端] 已生成极端字符页面', false, '未找到内联数据块');
   }
 
   // ------------------------------------------------------------ 公开分享版

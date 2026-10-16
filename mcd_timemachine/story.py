@@ -50,6 +50,53 @@ _REDACT_STORE = "门店已隐藏"
 # 分享卡片字段：默认全部隐藏，由用户在页面上主动勾选
 PRIVACY_DEFAULTS = {"amount": False, "store": False, "date": False, "generated": False}
 
+# ---- 脱敏登记表
+# 第六轮审查指出：只在渲染完成后用正则扫 HTML，规则依赖具体文本形态，
+# 将来新增一个不带 ¥ 的金额字段、或一个不在门店名单里的地址，就可能漏出去。
+# 因此把判据前移到「字段」，并分成三层（见下方「生成期脱敏」一节）。
+#
+# 字段名里出现这些词（按 snake_case / 驼峰切分后比对单词，中文按包含判断）
+# 即整字段置占位符。
+_SENSITIVE_WORDS = frozenset({
+    "addr", "address", "detail", "detailaddress", "position", "location",
+    "id", "no", "code", "sn", "orderid", "orderno", "ordercode", "ordersn",
+    "phone", "mobile", "tel", "telephone", "contact",
+    "lat", "lng", "lon", "latitude", "longitude", "geo", "gps",
+    "openid", "unionid", "userid", "uid", "member", "memberid", "cardno",
+    "invoice", "taxno", "transaction", "paymentid", "imei", "idfa", "deviceid",
+    "password", "passwd", "secret", "token", "credential", "cookie", "session",
+})
+_SENSITIVE_CJK = ("地址", "收货", "送达", "电话", "手机", "号码", "会员", "账号",
+                  "密码", "编号", "单号", "支付", "发票", "坐标", "定位", "经纬",
+                  "身份证", "设备", "地址")
+
+# 数值字段白名单：只有登记在这里的数值才允许出现在公开版。
+# 其余数值一律按金额处理（fail-closed）——将来新增金额字段时不必再改规则，
+# 而新增计数类字段会被 tests/test_story.py::TestRedactionRegistry 逼着登记。
+_SAFE_NUMBER_KEYS = frozenset({
+    # 计数
+    "total_orders", "total_items", "span_days", "best_streak",
+    "qty", "count", "orders", "items", "pages", "raw_records",
+    "unique_orders", "duplicates_removed", "early_orders", "late_orders",
+    "with_date", "with_amount", "with_items", "with_store",
+    "actual_amount_orders", "estimated_amount_orders", "unknown_amount_orders",
+    "orders_with_amount", "orders_with_date", "orders_with_items",
+    "truncated",
+    # 百分比 / 评分 / 可信度
+    "pct", "delta", "early", "late", "score", "confidence",
+})
+
+# 字符串形态的金额字段（key 命中即整值置「金额已隐藏」）
+_MONEY_WORDS = frozenset({"spend", "amount", "price", "money", "cost", "fee",
+                          "paid", "payment", "pay", "outlay", "budget"})
+_MONEY_CJK = ("金额", "价格", "消费", "客单", "实付", "花费", "总价", "预算")
+# 名字里含金额词、但装的是计数或口径枚举，不能当金额抹掉
+_MONEY_WORDS_EXCEPT = frozenset({
+    "spend_basis", "amount_source", "actual_amount_orders",
+    "estimated_amount_orders", "unknown_amount_orders",
+    "orders_with_amount", "with_amount",
+})
+
 _FIELD_ORDER = ("amount", "store", "date", "generated")
 _FIELD_LABELS = {
     "amount": "消费金额",
@@ -137,19 +184,21 @@ def build_story_payload(profile: Dict[str, Any], privacy: str = "personal") -> D
     store_text = _top_store(profile)
     generated_at = profile.get("generated_at", "")
 
-    amount_value = f"{_spend_title(summary)} ¥{(summary.get('display_spend') or 0):,.2f}"
-    if summary.get("spend_basis", "none") == "none":
-        amount_value = "暂无金额数据"
-
-    raw_values = {
-        "amount": amount_value,
-        "store": store_text or "暂无门店记录",
-        "date": range_text,
-        "generated": generated_at or "—",
-    }
     if public:
-        # 公开版：值不进文件，也不进卡片
-        raw_values = {k: _PUBLIC_PLACEHOLDER for k in raw_values}
+        # 公开版：原值压根没进文件（profile 已过 redact_profile），
+        # 这里给一份确定的占位文案，页面上的字段行才不会出现空白
+        raw_values = {k: _PUBLIC_PLACEHOLDER for k in _FIELD_ORDER}
+    else:
+        # 金额只在个人版里格式化：公开版的 display_spend 是字符串占位符
+        amount_value = f"{_spend_title(summary)} ¥{(summary.get('display_spend') or 0):,.2f}"
+        if summary.get("spend_basis", "none") == "none":
+            amount_value = "暂无金额数据"
+        raw_values = {
+            "amount": amount_value,
+            "store": store_text or "暂无门店记录",
+            "date": range_text,
+            "generated": generated_at or "—",
+        }
 
     fields: Dict[str, Dict[str, Any]] = {
         key: {
@@ -205,29 +254,207 @@ def _mask_text(text: Any, extra: str = "") -> str:
 
 
 # ---------------------------------------------------------------- 生成期脱敏
+#
+# 三层，逐层收紧；任一层单独失效都不会直接泄漏（第六轮审查 P1）：
+#
+#   第一层 结构化（redact_profile）：在渲染**之前**把「用于渲染的数据」里的敏感
+#          字段换成占位符。判据是字段名（地址 / 订单号 / 电话 / 定位 / 账号…）
+#          与字段类型（数值默认按金额、日期按日粒度），所以新增同类字段会被
+#          自动覆盖，不再依赖「金额一定写成 ¥123.00」这种文本假设。
+#   第二层 值扫描（redact_html）：对渲染完成的 HTML（含内联 JSON 数据块）
+#          再扫一遍已知形态，兜住渲染层自己拼出来的字符串。
+#   第三层 自检（scrub_leaks）：从**原 profile** 反推敏感原始值，拿去比对成品
+#          HTML，命中即替换；同一套函数供测试断言「零残留」。
+
+_REDACT_ID = "编号已隐藏"
+_REDACT_ADDR = "地址已隐藏"
+_REDACT_FIELD = "已隐藏"
 
 _PV_DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+# 「地址：…」这类自由文本里的地址
+_ADDRESS_RE = re.compile(r"(?:收货|送达|配送)?地址\s*[：:]\s*[^<>，。；;、\n]{2,40}")
+# 订单号形态：字母前缀 + 长数字（如 DEMO202606270001）
+_ORDER_ID_RE = re.compile(r"(?<![0-9A-Za-z])[A-Z]{2,}[0-9]{6,}(?![0-9A-Za-z])")
+# 8 位以上纯数字（订单号 / 手机号 / 身份证等）
+_LONG_DIGITS_RE = re.compile(r"(?<![0-9])\d{8,}(?![0-9])")
+# 带「元 / 块」后缀的金额（没有 ¥ 符号也要抹）
+_CNY_TEXT_RE = re.compile(r"\d[\d,]*(?:\.\d{1,2})?\s*(?:元|块钱|块)")
+
+# 值级规则：数据层与 HTML 层共用同一套，避免两边规则漂移
+_VALUE_RULES = (
+    (_PV_MONEY_RE, _REDACT_MONEY),
+    (_PV_DAY_RE, _REDACT_DAY),
+    (_ADDRESS_RE, _REDACT_ADDR),
+    (_ORDER_ID_RE, _REDACT_ID),
+    (_LONG_DIGITS_RE, _REDACT_ID),
+    (_CNY_TEXT_RE, _REDACT_MONEY),
+)
+
+_KEY_SPLIT_RE = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff]+")
+_CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _key_words(key: Any) -> frozenset:
+    """把字段名切成小写单词：`orderId` / `order_id` / `order-id` 都切成 order + id。"""
+    raw = _CAMEL_RE.sub("_", str(key))
+    return frozenset(w.lower() for w in _KEY_SPLIT_RE.split(raw) if w)
+
+
+def is_sensitive_key(key: Any) -> bool:
+    """字段名是否属于「一律不写入公开版」的敏感字段（地址 / 编号 / 联系方式…）。"""
+    text = str(key)
+    if any(part in text for part in _SENSITIVE_CJK):
+        return True
+    return bool(_key_words(text) & _SENSITIVE_WORDS)
+
+
+def is_money_key(key: Any) -> bool:
+    """字符串形态的金额字段判定（数值字段走 _SAFE_NUMBER_KEYS 的白名单制）。"""
+    text = str(key)
+    if text in _MONEY_WORDS_EXCEPT:
+        return False
+    if any(part in text for part in _MONEY_CJK):
+        return True
+    return bool(_key_words(text) & _MONEY_WORDS)
+
+
+def _scrub_text(text: Any, names: Optional[List[str]] = None) -> str:
+    """抹掉一段文本里的门店名、金额、到日日期、地址与编号形态。
+
+    数据层（自由文案）与 HTML 层共用：文本与已转义文本都替换，
+    因此既能处理原始字符串，也能处理 HTML 片段。
+    """
+    out = str(text if text is not None else "")
+    if not out:
+        return out
+    for name in sorted((str(n) for n in (names or []) if n), key=len, reverse=True):
+        out = out.replace(_e(name), _REDACT_STORE).replace(name, _REDACT_STORE)
+    for pattern, repl in _VALUE_RULES:
+        out = pattern.sub(repl, out)
+    return out
 
 
 def store_names(profile: Dict[str, Any]) -> List[str]:
     return [s.get("name") for s in (profile.get("stores") or []) if s.get("name")]
 
 
-def redact_html(html: str, names: Optional[List[str]] = None) -> str:
-    """公开分享版：把敏感值从 HTML 里**真正抹掉**，而不是靠 CSS 遮挡。
+def _redact_node(node: Any, names: List[str]) -> Any:
+    if isinstance(node, dict):
+        out: Dict[Any, Any] = {}
+        for key, value in node.items():
+            name = str(key)
+            if name == "generated_at":
+                # 生成时间：公开版连字段值都不留（页面另有开关，默认也不入图）
+                out[key] = ""
+            elif is_sensitive_key(name):
+                out[key] = _REDACT_FIELD
+            elif isinstance(value, (dict, list)):
+                out[key] = _redact_node(value, names)
+            elif isinstance(value, bool) or value is None:
+                out[key] = value
+            elif isinstance(value, (int, float)):
+                # 数值白名单之外一律按金额处理：新增金额字段无需再改规则
+                out[key] = value if name in _SAFE_NUMBER_KEYS else _REDACT_MONEY
+            elif is_money_key(name):
+                out[key] = _REDACT_MONEY
+            else:
+                out[key] = _scrub_text(value, names)
+        return out
+    if isinstance(node, list):
+        return [_redact_node(item, names) for item in node]
+    return _scrub_text(node, names)
 
-    - 金额：`¥1,234.00` → 「金额已隐藏」
-    - 到日日期：`2026-06-27` → 「日期已隐藏」；保留 `2026-06` 月粒度，
-      否则第 5 章的月度趋势与口味变化分组依据会失去意义（页面会写明这一点）
-    - 门店名：按 profile 中的门店名逐个替换为「门店已隐藏」（保留次数与家数）
 
-    同时对整份 HTML（含内联 JSON 数据块）生效，避免漏改某个字段。
+def redact_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """公开分享版：**在渲染之前**把敏感值从数据里拿掉，返回深拷贝（不改入参）。
+
+    这是第一道防线。渲染层拿到的就已经是脱敏数据，所以不存在
+    「渲染时忘了标隐私字段」这类遗漏；渲染完成后仍会再扫一遍 HTML 兜底。
     """
-    out = _PV_MONEY_RE.sub(_REDACT_MONEY, html)
-    out = _PV_DAY_RE.sub(_REDACT_DAY, out)
-    for name in sorted((n for n in (names or []) if n), key=len, reverse=True):
-        out = out.replace(_e(name), _REDACT_STORE).replace(name, _REDACT_STORE)
+    out = _redact_node(profile, store_names(profile))
+    # 年份用于标题「你的 2026 麦麦年度回忆」，本身不敏感，
+    # 但 range_end 已被抹掉，这里先把年份单独留下来。
+    cov = profile.get("coverage") or {}
+    summary = profile.get("summary") or {}
+    end = str(cov.get("range_end") or summary.get("last_date") or "")
+    out["story_year"] = end[:4] if len(end) >= 4 and end[:4].isdigit() else ""
     return out
+
+
+def redact_html(html: str, names: Optional[List[str]] = None) -> str:
+    """第二道防线：对渲染完成的 HTML 再扫一遍已知形态，含内联 JSON 数据块。
+
+    第一道防线是 `redact_profile()`（渲染前按字段脱敏）。这一层保留，
+    是为了挡住「渲染层自己拼出来的字符串」——正文里的金额文案、月份 tooltip、
+    覆盖率说明等。两层共用 `_VALUE_RULES`，规则不会漂移。
+    """
+    return _scrub_text(html, names or [])
+
+
+def _iter_scalars(node: Any, key: str = ""):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            for item in _iter_scalars(v, str(k)):
+                yield item
+    elif isinstance(node, list):
+        for v in node:
+            for item in _iter_scalars(v, key):
+                yield item
+    else:
+        yield key, node
+
+
+def sensitive_tokens(profile: Dict[str, Any]) -> List[str]:
+    """从**原 profile** 反推所有敏感原始值，供第三层自检与测试使用。
+
+    金额会展开成渲染时可能出现的各种格式化形态（`1,234.50` / `1234.50` /
+    `¥1,234.50`），因此「金额恰好写成什么格式」不再是漏检的理由。
+    过短的串（< 5 字符，如 `0` / `12`）不参与比对，避免误伤无关文本。
+    """
+    tokens: set = set()
+    for key, value in _iter_scalars(profile):
+        if value is None or isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)) and key not in _SAFE_NUMBER_KEYS:
+            # 渲染时可能出现的形式都算上：带千分位、带小数、以及带货币符号的
+            variants = ("{:,.2f}", "{:.2f}", "{:,.1f}", "{:.1f}", "{:,}", "{}")
+            for fmt in variants:
+                try:
+                    text = fmt.format(value)
+                except (ValueError, TypeError):  # pragma: no cover - 数值格式化异常
+                    continue
+                tokens.add(text)
+                tokens.add("¥" + text)
+            continue
+        if isinstance(value, str):
+            for pattern, _repl in _VALUE_RULES:
+                tokens.update(pattern.findall(value))
+    for name in store_names(profile):
+        tokens.add(str(name))
+    return sorted(t for t in tokens if len(t) >= 5)
+
+
+def scan_leaks(html: str, profile: Dict[str, Any]) -> List[str]:
+    """第三层自检：成品 HTML 里是否还能找到原 profile 的敏感原始值。"""
+    return [t for t in sensitive_tokens(profile) if t in html]
+
+
+def scrub_leaks(html: str, profile: Dict[str, Any]) -> Any:
+    """第三层兜底：把自检命中的残余值就地替换掉，返回 (html, 命中列表)。
+
+    正常情况下命中列表为空（前两层已足够）。它不是「安全网」而是「报警器」：
+    真命中说明前两层有洞，测试里另有一条断言证明前两层单独就能做到零残留。
+    """
+    hits = scan_leaks(html, profile)
+    for token in hits:
+        if _PV_MONEY_RE.fullmatch(token) or _CNY_TEXT_RE.fullmatch(token) or "¥" in token:
+            repl = _REDACT_MONEY
+        elif _PV_DAY_RE.search(token):
+            repl = _REDACT_DAY
+        else:
+            repl = _REDACT_FIELD
+        html = html.replace(token, repl)
+    return html, hits
 
 
 def _bar_rows(rows: List[Dict[str, Any]], label_key: str, value_key: str,
@@ -285,10 +512,11 @@ def _chapter_hero(profile: Dict[str, Any]) -> str:
     empty = bool(profile.get("empty"))
     source = cov.get("source", "unknown")
     badge_cls = "demo" if source == "demo" else "real"
-    year = ""
     end = cov.get("range_end") or s.get("last_date") or ""
-    if len(end) >= 4:
-        year = end[:4]
+    # 公开版的 range_end 是占位符，年份由 redact_profile 预先留在 story_year 里
+    year = profile.get("story_year")
+    if year is None:
+        year = end[:4] if len(end) >= 4 else ""
 
     stats = [
         (f"{s.get('total_orders', 0)} 单", "订单总数"),
@@ -372,10 +600,13 @@ def _chapter_daily(profile: Dict[str, Any]) -> str:
             "<h2 class='ch-title'>我的麦麦日常</h2>"
             "<p class='ch-sub'>多久吃一次、什么时候吃、常点什么</p>")
 
+    # 公开版里 avg_order 已是占位字符串，只有个人版才做金额格式化
+    avg = s.get("avg_order", 0)
+    avg_text = avg if isinstance(avg, str) else "¥" + format(avg, ",.1f")
     grid = (
         "<div class='card reveal'><h3>消费节奏</h3><div class='stat-grid'>"
         f"<div><b>{per_month}</b><span>月均单量</span></div>"
-        f"<div><b>{_pv('¥' + format(s.get('avg_order', 0), ',.1f'), '已隐藏')}</b>"
+        f"<div><b>{_pv(avg_text, '已隐藏')}</b>"
         f"<span>平均客单价（{_e(_spend_title(s))}）</span></div>"
         f"<div><b>{s.get('total_items', 0)}</b><span>单品总件数</span></div>"
         f"<div><b>{len(profile.get('categories') or [])}</b><span>涉及品类</span></div>"
@@ -661,21 +892,39 @@ def _footer(profile: Dict[str, Any], privacy: str = "personal") -> str:
     )
 
 
-def render_story(profile: Dict[str, Any], privacy: str = "personal") -> str:
+def render_story(profile: Dict[str, Any], privacy: str = "personal",
+                 value_sweep: bool = True) -> str:
     """把 profile 渲染成单文件、离线可打开的故事页 HTML。
 
-    `privacy="public"` 时在**生成阶段**就把金额 / 门店名 / 到日日期从 HTML 里抹掉，
-    产出的文件本身不含这些值（不是 CSS 遮挡）。
+    `privacy="public"` 时按三层脱敏，产出的文件本身不含金额 / 门店名 / 到日日期
+    （不是 CSS 遮挡）：
+
+    1. `redact_profile()`：**渲染前**按字段名 / 字段类型把敏感值换成占位符；
+    2. `redact_html()`：渲染完成后再扫一遍已知形态（含内联 JSON 数据块）；
+    3. `scrub_leaks()`：拿原 profile 反推的敏感原始值比对成品，命中即替换。
+
+    `value_sweep=False` 只关掉第三层。它存在的意义是让测试能证明
+    「前两层单独就足够」，而不是让第三层默默兜住所有问题。
     """
     if privacy not in PRIVACY_MODES:
         raise ValueError(f"privacy 只能是 {PRIVACY_MODES}，收到 {privacy!r}")
+    source = profile
+    public = privacy == "public"
+    if public:
+        profile = redact_profile(source)          # 第一层
+
     payload = build_story_payload(profile, privacy)
     cov = profile.get("coverage") or {}
     title = "麦麦时光机 · 我的年度回忆"
-    desc = (
-        f"统计区间 {cov.get('range_start') or '—'} ~ {cov.get('range_end') or '—'}，"
-        f"共 {cov.get('unique_orders', 0)} 单。六章节滚动故事 + 隐私友好分享卡片。"
-    )
+    if public:
+        # 公开版不给统计区间：range_start / range_end 已是占位符，写进 meta 也没意义
+        desc = (f"共 {cov.get('unique_orders', 0)} 单。"
+                "六章节滚动故事 + 隐私友好分享卡片。")
+    else:
+        desc = (
+            f"统计区间 {cov.get('range_start') or '—'} ~ {cov.get('range_end') or '—'}，"
+            f"共 {cov.get('unique_orders', 0)} 单。六章节滚动故事 + 隐私友好分享卡片。"
+        )
 
     template = _asset("story.html")
     html = (
@@ -689,9 +938,10 @@ def render_story(profile: Dict[str, Any], privacy: str = "personal") -> str:
         .replace("__STORY_DATA__", _json_for_html(payload))
         .replace("__STORY_JS__", _asset("story.js"))
     )
-    if privacy == "public":
-        # 连同内联 JSON 一起兜底一遍，防止将来新增字段时漏改
-        html = redact_html(html, store_names(profile))
+    if public:
+        html = redact_html(html, store_names(source))   # 第二层
+        if value_sweep:
+            html, _hits = scrub_leaks(html, source)     # 第三层
     return html
 
 
@@ -704,5 +954,6 @@ def write_story(profile: Dict[str, Any], out_dir: Path,
 
 
 __all__ = ["render_story", "write_story", "build_story_payload", "redact_html",
-           "store_names", "CARD_WIDTH", "CARD_HEIGHT", "PRIVACY_DEFAULTS",
-           "PRIVACY_MODES"]
+           "redact_profile", "scan_leaks", "scrub_leaks", "sensitive_tokens",
+           "store_names", "is_money_key", "is_sensitive_key",
+           "CARD_WIDTH", "CARD_HEIGHT", "PRIVACY_DEFAULTS", "PRIVACY_MODES"]

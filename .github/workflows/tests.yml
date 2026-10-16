@@ -53,7 +53,9 @@ jobs:
 
       - name: Generate story pages (personal + public)
         run: |
-          python -m mcd_timemachine demo --count 120 --out build
+          # --as-of 固定基准日期：否则示例数据随「今天」漂移，周次/时段/月度桶跟着变，
+          # 版面几何断言会在个别日期莫名失败，产物也不再可复现。
+          python -m mcd_timemachine demo --count 120 --out build --as-of 2026-06-30
           python -m mcd_timemachine story --out build --privacy public
           cp build/story.html build/public-story.html
           python -m mcd_timemachine story --out build --privacy personal
@@ -86,7 +88,7 @@ jobs:
 
       - name: Generate story pages (personal + public)
         run: |
-          python -m mcd_timemachine demo --count 120 --out build
+          python -m mcd_timemachine demo --count 120 --out build --as-of 2026-06-30
           python -m mcd_timemachine story --out build --privacy public
           cp build/story.html build/public-story.html
           python -m mcd_timemachine story --out build --privacy personal

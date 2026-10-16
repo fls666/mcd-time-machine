@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -831,6 +832,24 @@ class TestCliStory(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(SystemExit):
                 main(["demo", "--out", tmp, "--privacy", "secret"])
+
+    def test_demo_as_of_produces_reproducible_pages(self):
+        """--as-of 让两次生成的 story.html 逐字节一致（CI 版面断言依赖它）。"""
+        outs = []
+        for _ in range(2):
+            tmp = tempfile.mkdtemp()
+            self.addCleanup(shutil.rmtree, tmp, True)
+            self.assertEqual(
+                main(["demo", "--count", "30", "--out", tmp, "--as-of", "2026-06-30"]), 0)
+            outs.append((Path(tmp) / "story.html").read_text(encoding="utf-8"))
+        self.assertEqual(outs[0], outs[1])
+        # 基准日期确实生效：标题年份随之固定
+        self.assertIn("2026", outs[0])
+
+    def test_demo_as_of_rejects_bad_format(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(main(["demo", "--out", tmp, "--as-of", "2026/06/30"]), 1)
+            self.assertFalse((Path(tmp) / "story.html").exists())
 
 
 # ================================================================ 第八轮审查

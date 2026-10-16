@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -108,7 +109,14 @@ def _print_privacy_hint(privacy: str) -> None:
 def cmd_demo(args: argparse.Namespace) -> int:
     out_dir: Path = args.out
     out_dir.mkdir(parents=True, exist_ok=True)
-    orders = generate(orders=args.count, seed=args.seed)
+    as_of: Optional[datetime] = None
+    if getattr(args, "as_of", None):
+        try:
+            as_of = datetime.strptime(args.as_of, "%Y-%m-%d")
+        except ValueError:
+            print(f"错误：--as-of 需要 YYYY-MM-DD 格式，收到 {args.as_of!r}", file=sys.stderr)
+            return 1
+    orders = generate(orders=args.count, seed=args.seed, end=as_of)
     coverage = build_coverage(
         source="demo",
         pages=1,
@@ -301,6 +309,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_demo = sub.add_parser("demo", parents=[common], help="用虚构示例数据跑通全流程")
     p_demo.add_argument("--count", type=int, default=160, help="示例订单条数")
     p_demo.add_argument("--seed", type=int, default=1024, help="随机种子")
+    p_demo.add_argument("--as-of", metavar="YYYY-MM-DD", default=None,
+                        help="固定示例数据的基准日期，使同一 seed 产出完全一致的结果"
+                             "（CI 与文档预览用它消除日期漂移）")
     p_demo.set_defaults(func=cmd_demo)
 
     p_doctor = sub.add_parser("doctor", parents=[common],

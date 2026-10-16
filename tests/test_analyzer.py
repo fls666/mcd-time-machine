@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from collections import Counter
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from mcd_timemachine.analyzer import analyze
@@ -136,6 +137,28 @@ class TestEdgeCases(unittest.TestCase):
         b = generate(orders=30, seed=7)
         self.assertEqual(a, b)
         self.assertEqual(len(a), 30)
+
+    def test_demo_data_as_of_is_fully_reproducible(self):
+        """显式基准日期后，同一 seed 在任何时候都产出完全一致的数据。
+
+        不传 end 时用 `datetime.now()`，两次调用会差几微秒——日期相同但时刻可能跨分钟，
+        所以「完全一致」这件事只有固定 end 才成立。CI 的版面断言依赖这一点。
+        """
+        fixed = datetime(2026, 6, 30)
+        a = generate(orders=40, seed=7, end=fixed)
+        b = generate(orders=40, seed=7, end=fixed)
+        self.assertEqual(a, b)
+        self.assertEqual(a[-1]["time"][:10] <= "2026-06-30", True)
+
+        # 换个基准日期，数据应当随之变化（证明确实生效，而不是被忽略）
+        other = generate(orders=40, seed=7, end=datetime(2025, 1, 15))
+        self.assertNotEqual([o["order_id"] for o in a], [o["order_id"] for o in other])
+
+    def test_demo_data_as_of_accepts_aware_datetime(self):
+        """带时区的 datetime 不应引发 naive/aware 相减报错。"""
+        aware = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        orders = generate(orders=10, seed=1, end=aware)
+        self.assertEqual(len(orders), 10)
 
     def test_taste_shift_returns_delta(self):
         orders = []

@@ -24,6 +24,8 @@
 - 由 GitHub Actions 在每次主分支更新后自动重新生成并发布；
   若 Pages 不可用（例如仓库为私有、或 Source 未设为 GitHub Actions），
   工作流会自动跳过部署，改为在 Actions 运行页提供 `preview-report` 产物下载
+- **想在手机上看？** 见 [docs/REAL_DEVICE_CHECK.md](./docs/REAL_DEVICE_CHECK.md)：
+  三种把页面放到手机上的方式，以及一份逐项打勾的真机走查清单（含分享卡片导出的机型差异）
 
 > 示例报告由 `mcdtm demo` 用**虚构订单**生成，报告顶部有醒目的「示例数据」标识，不会被误认为真实消费记录。
 

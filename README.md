@@ -16,7 +16,9 @@
 - **示例年度报告（HTML）**：[docs/preview.html](./docs/preview.html) —— 完整数据版报告
 - **示例年度报告（Markdown）**：[docs/preview.md](./docs/preview.md)
 - **分享卡片导出实物**：[docs/sample-share-card.png](./docs/sample-share-card.png)（默认四项隐藏）、
-  [docs/sample-share-card-longtext.png](./docs/sample-share-card-longtext.png)（超长文本截断）
+  [docs/sample-share-card-longtext.png](./docs/sample-share-card-longtext.png)（超长文本截断）、
+  [docs/sample-share-card-public.png](./docs/sample-share-card-public.png)（公开分享版）、
+  [docs/sample-share-card-extreme.png](./docs/sample-share-card-extreme.png)（极端字符：超长英文 / Emoji / 中英混排 / 空白值，四项全开）
   —— 由 CI 里的真实 Chromium 导出，非设计稿
 - **在线示例（GitHub Pages，直接点开即可）**：<https://fls666.github.io/mcd-time-machine/>（首页即故事页，`report.html` 为完整报告，`story-public.html` 为公开分享版）
 - 由 GitHub Actions 在每次主分支更新后自动重新生成并发布；
@@ -209,19 +211,29 @@ mcdtm story --out mcdtm-output --privacy public # 公开分享版：敏感值在
 | `public` | **不写入文件** | **不写入文件** | 只保留「年-月」 | 四项置灰、无可展示内容 | 顶部绿条：已移除，且提示同目录其它文件仍是完整的 |
 
 - 公开版是**生成期脱敏**：不是 CSS 遮挡，`story.html` 里连一个 `¥`、一个 `2026-06-27` 形式的日期、
-  一个门店名都找不到（有单元测试与浏览器测试双重断言）；
+  一个门店名都找不到（有单元测试与浏览器测试双重断言）。脱敏分三层，逐层收紧：
+
+  | 层 | 时机 | 判据 |
+  | --- | --- | --- |
+  | ① 结构化 | **渲染之前**，作用于数据 | 字段名（地址 / 订单号 / 电话 / 定位 / 账号…）与字段类型（数值默认按金额处理，只有登记过的计数才放行），因此将来新增同类字段会被自动覆盖 |
+  | ② 值扫描 | 渲染之后，作用于整份 HTML（含内联 JSON） | 已知形态：金额、到日日期、门店名、地址、订单号形态的编号 |
+  | ③ 自检 | 输出之前 | 从原 `profile` 反推所有敏感原始值（含金额的多种格式化写法）逐个比对成品，命中即替换；正常情况下应当零命中 |
+
+  ②③ 是兜底，不是主力：有测试**关掉第三层**断言公开版依然零残留，
+  另有一条测试故意把原值拼回 HTML，确认自检确实能抓到泄漏。
 - 保留「年-月」粒度是因为第 5 章的月度趋势与口味变化分组依赖月份，页面与文档都写明了这一点；
+  年份（「你的 2026 麦麦年度回忆」）本身不敏感，会单独保留下来；
 - `report.md` / `report.html` / `profile.json` **始终是完整报告**，不受该参数影响 ——
   公开版页面上与页脚都会提醒不要把这些文件一起发出去。
 
 ### 前端与真实浏览器验收
 
 ```bash
-# 1) jsdom 冒烟：真跑页面脚本，四条路径（增强 / 降级 / 恶意数据 / 公开版）
+# 1) jsdom 冒烟：真跑页面脚本，五条路径（增强 / 降级 / 恶意数据 / 极端字符 / 公开版）
 npm install jsdom
 node scripts/smoke_story.js mcdtm-output/story.html path/to/public-story.html
 
-# 2) 真实浏览器验收：375px 手机视口布局、六章滚动、长文本抗溢出、PNG 尺寸与元数据
+# 2) 真实浏览器验收：375px 手机视口布局、六章滚动、长文本与极端字符抗溢出、PNG 尺寸与元数据
 npm install playwright && npx playwright install chromium
 node scripts/browser_check.js mcdtm-output/story.html path/to/public-story.html --keep-png artifacts
 ```
@@ -243,7 +255,7 @@ mcd-time-machine/
 │   └── cli.py            # 命令行入口
 ├── scripts/
 │   ├── windows_wizard.py # Windows 一键联调向导
-│   ├── smoke_story.js    # 故事页前端冒烟（增强/降级/恶意数据/公开版四路径，需 jsdom）
+│   ├── smoke_story.js    # 故事页前端冒烟（增强/降级/恶意数据/极端字符/公开版五路径，需 jsdom）
 │   └── browser_check.js  # 真实浏览器验收（375px 布局 + PNG 导出，需 playwright）
 ├── tests/                # 180+ 条 unittest 用例，零第三方依赖
 ├── docs/preview.html     # 示例年度报告（可直接在浏览器打开）
@@ -268,7 +280,9 @@ python -m unittest discover -s tests -v
 分页终止与截断、边界日期、连续打卡、HTML 转义与结构闭合、示例数据确定性，
 以及故事页的六章结构、离线无外链、动效降级开关、隐私默认值与 JSON 转义。
 还包含：分享预览的注入回归（恶意商品名 / 门店名 / 特殊字符 / 中文长文本）、
-属性转义与变量遮蔽护栏、公开分享版的生成期脱敏、生成时间默认隐藏、卡片长文本宽度约束，
+属性转义与变量遮蔽护栏、公开分享版的三层生成期脱敏（字段名判据 / 值形态扫描 / 自检兜底、
+数值字段必须显式分类、地址与订单号形态回归）、生成时间默认隐藏、卡片长文本宽度约束、
+Emoji 按字素截断与空白值兜底，
 以及卡片版面高度预算（人格面板高度随内容自适应、描述超预算时逐行裁剪、版面几何钩子不得泄漏原文）。
 
 `push` / `pull_request` 时 GitHub Actions 会在 Python 3.9 ~ 3.13 上自动跑编译检查、单元测试与 demo 冒烟，
@@ -276,8 +290,8 @@ python -m unittest discover -s tests -v
 
 | job | 工具 | 覆盖 |
 | --- | --- | --- |
-| `story` | jsdom | 真跑页面脚本的四条路径：增强渐显 / 降级可读 / 恶意数据注入 / 公开分享版；断言预览只按纯文本呈现、四项隐私默认隐藏、绘制文字不越出 1080×1920，并从页面暴露的版面几何断言「描述没跑出人格面板 / 胶囊没压到字段面板 / 字段面板没越过页脚」 |
-| `browser` | Playwright + Chromium | 真实布局与真实 Canvas：375px 视口无横向溢出、36 个渐显元素逐个滚动验证、长文本抗溢出、隐私开关、导出 PNG 的尺寸与元数据块，并用同一条版面几何断言复核真实字体度量下的版式 |
+| `story` | jsdom | 真跑页面脚本的五条路径：增强渐显 / 降级可读 / 恶意数据注入 / 极端字符 / 公开分享版；断言预览只按纯文本呈现、四项隐私默认隐藏、绘制文字不越出 1080×1920、Emoji 不被劈成孤立代理对，并从页面暴露的版面几何断言「描述没跑出人格面板 / 胶囊没压到字段面板 / 字段面板没越过页脚」 |
+| `browser` | Playwright + Chromium | 真实布局与真实 Canvas：375px 视口无横向溢出、36 个渐显元素逐个滚动验证、长文本与极端字符（Emoji / 中英混排 / 空值）抗溢出、隐私开关、导出 PNG 的尺寸与元数据块，并用同一条版面几何断言复核真实字体度量下的版式 |
 
 两个 job 都设了 `SMOKE_REQUIRE_*=1`：依赖装不上直接失败，**不允许冒烟静默跳过**。
 
@@ -306,7 +320,7 @@ python -m unittest discover -s tests -v
 - `.gitignore` 已排除 `mcdtm-output/`、`.env` 等一切可能含敏感信息的文件
 - **请勿把 `mcdtm-output/raw/` 下的原始返回（含订单、门店等个人信息）提交到任何公开仓库或发给他人**
 - 分享场景分两档：页面上的「隐私浏览」只是**临时遮挡**；要真正脱敏请用
-  `mcdtm story --privacy public`，金额 / 门店名 / 到日日期在生成期就不会写进文件
+  `mcdtm story --privacy public`，金额 / 门店名 / 到日日期在渲染前就不写进文件（三层脱敏，见上文）
 
 **6. 零依赖**
 只依赖 Python 标准库，`git clone` 下来就能跑。
@@ -316,7 +330,7 @@ python -m unittest discover -s tests -v
 
 ## 已知限制
 
-- **真实 MCP 联调需本人完成**：本项目已通过 185 条单元测试与示例数据全链路验证，
+- **真实 MCP 联调需本人完成**：本项目已通过 203 条单元测试与示例数据全链路验证，
   但各账号的返回结构可能不同。首次使用请先运行 `mcdtm doctor`；
   若 `order-list` 解析异常，跑 `mcdtm share` 生成脱敏结构报告贴到 Issue，
   我会据此补进字段候选表（**不要贴 `doctor.json` 或 `raw/`，里面有真实数据**）。

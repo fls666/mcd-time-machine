@@ -602,11 +602,15 @@ def render_html(profile: Dict[str, Any]) -> str:
 
 # ---------------------------------------------------------------- 落盘
 
-def write_reports(profile: Dict[str, Any], out_dir: Path) -> Dict[str, Path]:
+def write_reports(profile: Dict[str, Any], out_dir: Path,
+                  privacy: str = "personal") -> Dict[str, Path]:
     """落盘三份同源产物：完整报告（md/html）+ 结构化数据，另有沉浸式故事页。
 
     report.html 保留为「完整、可核对」的静态报告；story.html 是 V2.0 新增的
     六章节滚动故事，两者并存，互不替代。
+
+    `privacy="public"` 时故事页产为公开分享版（金额 / 门店名 / 到日日期在生成期即从 HTML 移除）；
+    report.md / report.html / profile.json 始终是完整报告，不受该参数影响。
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     md_path = out_dir / "report.md"
@@ -621,7 +625,7 @@ def write_reports(profile: Dict[str, Any], out_dir: Path) -> Dict[str, Path]:
     try:
         from .story import write_story
 
-        paths["story"] = write_story(profile, out_dir)
+        paths["story"] = write_story(profile, out_dir, privacy)
     except Exception:  # pragma: no cover - 仅资源缺失等异常场景
         pass
     return paths

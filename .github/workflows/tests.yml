@@ -36,7 +36,7 @@ jobs:
           test -f /tmp/mcdtm-ci/provenance.json
 
   # 故事页是纯前端产物，单元测试覆盖不到 DOM 行为。
-  # 这里用 jsdom 真跑一遍页面脚本，验证动效降级与分享卡片隐私默认值。
+  # 这里用 jsdom 真跑一遍页面脚本，验证动效降级、注入防护与分享卡片隐私默认值。
   story:
     runs-on: ubuntu-latest
     steps:
@@ -51,11 +51,53 @@ jobs:
       - name: Install jsdom
         run: npm install --no-save --no-audit --no-fund jsdom
 
-      - name: Generate story page
-        run: python -m mcd_timemachine demo --count 120 --out build
+      - name: Generate story pages (personal + public)
+        run: |
+          python -m mcd_timemachine demo --count 120 --out build
+          python -m mcd_timemachine story --out build --privacy public
+          cp build/story.html build/public-story.html
+          python -m mcd_timemachine story --out build --privacy personal
 
       - name: Story page smoke test
         env:
           # 装上 jsdom 就必须真跑，装不上直接让 job 失败，不允许静默跳过
           SMOKE_REQUIRE_JSDOM: "1"
-        run: node scripts/smoke_story.js build/story.html
+        run: node scripts/smoke_story.js build/story.html build/public-story.html
+
+  # jsdom 没有布局引擎与真实 Canvas 编码，测不到「手机宽度下的真实排版」与导出的 PNG。
+  # 这里用 Playwright + Chromium 补上 375px 布局、长文本抗溢出、六章滚动与 PNG 尺寸。
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright + Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+
+      - name: Generate story pages (personal + public)
+        run: |
+          python -m mcd_timemachine demo --count 120 --out build
+          python -m mcd_timemachine story --out build --privacy public
+          cp build/story.html build/public-story.html
+          python -m mcd_timemachine story --out build --privacy personal
+
+      - name: Browser check (375px viewport + PNG export)
+        env:
+          SMOKE_REQUIRE_PLAYWRIGHT: "1"
+        run: node scripts/browser_check.js build/story.html build/public-story.html --keep-png artifacts
+
+      - name: Upload exported cards
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: share-card-png
+          path: artifacts/*.png
+          if-no-files-found: warn

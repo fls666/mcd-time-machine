@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-privacy="personal">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <meta name="generator" content="麦麦时光机 2.0.0">
-<meta name="description" content="统计区间 2025-09-13 ~ 2026-10-13，共 160 单。六章节滚动故事 + 隐私友好分享卡片。">
+<meta name="description" content="统计区间 2025-09-14 ~ 2026-10-14，共 160 单。六章节滚动故事 + 隐私友好分享卡片。">
 <title>麦麦时光机 · 我的年度回忆</title>
 <style>
 /* 麦麦时光机 · 沉浸式故事样式（V2.0）
@@ -599,6 +599,44 @@ main { display: block; }
   line-height: 1.75;
 }
 
+/* ------------------------------------------------- 模式横幅（个人版 / 公开版） */
+
+.mode-banner {
+  margin: 12px 16px 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.mode-banner b { font-weight: 700; }
+.mode-banner code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: rgba(0, 0, 0, .07);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+/* 个人完整版：提醒文件里有原始数据 */
+.mode-banner.personal {
+  background: #FFF1D6;
+  color: #6E4400;
+  border: 1px solid #F5CE8A;
+}
+/* 公开分享版：提醒已移除敏感值，但同目录还有别的文件 */
+.mode-banner.public {
+  background: #E8F5EC;
+  color: #14532D;
+  border: 1px solid #A9D9BA;
+}
+
+/* 公开版里这些值压根没写进文件，遮挡开关没有意义，直接隐藏 */
+html[data-privacy="public"] .priv-toggle { display: none; }
+
+/* 公开版里被置灰的字段：不可勾选，说明原因 */
+.sw input:disabled + span { opacity: .62; }
+.sw input:disabled ~ em { color: #14532D; }
+
 /* ---------------------------------------------------------------- 页脚 */
 
 .foot {
@@ -687,9 +725,9 @@ html.story-privacy .pv::after {
     当前浏览器未启用 JavaScript：故事的六章内容仍可完整阅读，仅滚动动效与分享卡片导出不可用。
   </p>
 </noscript>
-<section class='scene scene-hero' id='ch1' data-title='时光机启动'><div class='scene-inner'><p class='hero-eyebrow'>MCD TIME MACHINE</p><h1 class='hero-title'>你的 2026 麦麦年度回忆</h1><p class='hero-range'>统计区间 <span class='pv' data-mask='已隐藏'>2025-09-13</span> ~ <span class='pv' data-mask='已隐藏'>2026-10-13</span></p><span class='badge demo'>示例数据 · 虚构生成，非真实订单</span><span class='badge ghost'>160 单已解析</span><div class='hero-stats'><div><b>160 单</b><span>订单总数</span></div><div><b>605 件</b><span>单品总数</span></div><div><b>396 天</b><span>记录跨度</span></div><div><b>4 天</b><span>最长连续打卡</span></div></div><a class='cta' href='#ch2'>进入故事</a><p class='hero-hint'>向下滚动即可翻页，右侧圆点可跳章；想先核对数据可看同目录 report.html</p></div></section><section class='scene' id='ch2' data-title='故事的起点'><div class='scene-inner'><p class='ch-no'>CHAPTER 02</p><h2 class='ch-title'>故事的起点</h2><p class='ch-sub'>从最早的一单开始，把这一年重新走一遍</p><div class='card first-order reveal'><div class='date'><span class='pv' data-mask='已隐藏'>2025-09-13</span></div><div class='muted' style='margin-top:0'>这是这段记录里最早的一单</div></div><div class='card reveal'><h3>年度回忆时间轴</h3><ul class='timeline'><li class='reveal'><div class='t'>最豪华的一单</div><div class='d'><span class='pv' data-mask='已隐藏'>2026-06-27</span> 花了 <span class='pv' data-mask='已隐藏'>¥129.00</span>，点了 板烧鸡腿堡、美式咖啡、麦辣鸡翅、拿铁。</div></li><li class='reveal'><div class='t'>最豪横的一次</div><div class='d'><span class='pv' data-mask='已隐藏'>2026-09-29</span> 一次点了 8 件。</div></li><li class='reveal'><div class='t'>最常光顾的月份</div><div class='d'><span class='pv' data-mask='已隐藏'>2025-12</span> 你点了 17 单，累计 <span class='pv' data-mask='已隐藏'>¥780.50</span>。</div></li><li class='reveal'><div class='t'>你的主场</div><div class='d'><span class='pv' data-mask='已隐藏'>麦当劳（公司楼下餐厅）</span>，一共去过 43 次。</div></li><li class='reveal'><div class='t'>深夜食堂</div><div class='d'>有 17 单发生在 21 点之后。</div></li><li class='reveal'><div class='t'>最长连续打卡</div><div class='d'>连续 4 天。</div></li></ul></div></div></section><section class='scene' id='ch3' data-title='我的麦麦日常'><div class='scene-inner'><p class='ch-no'>CHAPTER 03</p><h2 class='ch-title'>我的麦麦日常</h2><p class='ch-sub'>多久吃一次、什么时候吃、常点什么</p><div class='card reveal'><h3>消费节奏</h3><div class='stat-grid'><div><b>11.4</b><span>月均单量</span></div><div><b><span class='pv' data-mask='已隐藏'>¥53.6</span></b><span>平均客单价（累计消费）</span></div><div><b>605</b><span>单品总件数</span></div><div><b>6</b><span>涉及品类</span></div></div><p class='muted'>（均为已确认的实际支付金额，金额覆盖 160/160 单）</p></div><div class='card reveal'><h3>出没时段</h3><ul class='bars'><li><div class='bar-head'><span class='n'>清晨</span><span class='v'>12 单</span></div><span class='track'><i class='fill' data-w='20'></i></span></li><li><div class='bar-head'><span class='n'>早餐</span><span class='v'>12 单</span></div><span class='track'><i class='fill' data-w='20'></i></span></li><li><div class='bar-head'><span class='n'>午餐</span><span class='v'>59 单</span></div><span class='track'><i class='fill' data-w='100'></i></span></li><li><div class='bar-head'><span class='n'>下午茶</span><span class='v'>14 单</span></div><span class='track'><i class='fill' data-w='24'></i></span></li><li><div class='bar-head'><span class='n'>晚餐</span><span class='v'>46 单</span></div><span class='track'><i class='fill' data-w='78'></i></span></li><li><div class='bar-head'><span class='n'>夜宵</span><span class='v'>17 单</span></div><span class='track'><i class='fill' data-w='29'></i></span></li></ul></div><div class='card reveal'><h3>一周节奏</h3><ul class='bars'><li><div class='bar-head'><span class='n'>周一</span><span class='v'>28 单</span></div><span class='track'><i class='fill' data-w='85'></i></span></li><li><div class='bar-head'><span class='n'>周二</span><span class='v'>17 单</span></div><span class='track'><i class='fill' data-w='52'></i></span></li><li><div class='bar-head'><span class='n'>周三</span><span class='v'>13 单</span></div><span class='track'><i class='fill' data-w='39'></i></span></li><li><div class='bar-head'><span class='n'>周四</span><span class='v'>33 单</span></div><span class='track'><i class='fill' data-w='100'></i></span></li><li><div class='bar-head'><span class='n'>周五</span><span class='v'>17 单</span></div><span class='track'><i class='fill' data-w='52'></i></span></li><li><div class='bar-head'><span class='n'>周六</span><span class='v'>23 单</span></div><span class='track'><i class='fill' data-w='70'></i></span></li><li><div class='bar-head'><span class='n'>周日</span><span class='v'>29 单</span></div><span class='track'><i class='fill' data-w='88'></i></span></li></ul></div><div class='card reveal'><h3>品类偏好</h3><ul class='bars'><li><div class='bar-head'><span class='n'>小食</span><span class='v'>189 件 · 31.2%</span></div><span class='track'><i class='fill' data-w='100'></i></span></li><li><div class='bar-head'><span class='n'>汉堡</span><span class='v'>150 件 · 24.8%</span></div><span class='track'><i class='fill' data-w='79'></i></span></li><li><div class='bar-head'><span class='n'>甜品</span><span class='v'>92 件 · 15.2%</span></div><span class='track'><i class='fill' data-w='49'></i></span></li><li><div class='bar-head'><span class='n'>饮料</span><span class='v'>85 件 · 14.0%</span></div><span class='track'><i class='fill' data-w='45'></i></span></li><li><div class='bar-head'><span class='n'>早餐</span><span class='v'>51 件 · 8.4%</span></div><span class='track'><i class='fill' data-w='27'></i></span></li><li><div class='bar-head'><span class='n'>沙拉</span><span class='v'>38 件 · 6.3%</span></div><span class='track'><i class='fill' data-w='20'></i></span></li></ul></div><div class='card reveal'><h3>常点单品</h3><div class='pills'><span class='pill'>麦乐鸡（5块） <i>× 39</i></span><span class='pill'>麦辣鸡翅 <i>× 38</i></span><span class='pill'>板烧鸡腿堡 <i>× 38</i></span><span class='pill'>玉米杯 <i>× 38</i></span><span class='pill'>麦旋风 <i>× 38</i></span><span class='pill'>中可乐 <i>× 35</i></span><span class='pill'>麦辣鸡腿堡 <i>× 35</i></span><span class='pill'>中薯条 <i>× 35</i></span><span class='pill'>薯饼 <i>× 32</i></span><span class='pill'>拿铁 <i>× 32</i></span></div></div><div class='card reveal'><h3>黄金搭档</h3><div class='pills'><span class='pill'>板烧鸡腿堡 + 玉米杯 <i>7 次同单</i></span><span class='pill'>板烧鸡腿堡 + 麦辣鸡翅 <i>7 次同单</i></span><span class='pill'>新地 + 麦乐鸡（5块） <i>6 次同单</i></span><span class='pill'>双层吉士汉堡 + 麦辣鸡翅 <i>6 次同单</i></span><span class='pill'>中可乐 + 早餐全餐 <i>6 次同单</i></span></div></div></div></section><section class='scene' id='ch4' data-title='口味人格测试结果'><div class='scene-inner'><p class='ch-no'>CHAPTER 04</p><h2 class='ch-title'>口味人格测试结果</h2><p class='ch-sub'>每条结论都附上可信度与数据依据，可以逐条核对</p><div class='persona-card persona-main reveal'><div class='persona-top'><span class='persona-name'>甜食主义</span><span class='persona-conf'>可信度 95%（高）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='95'></i></span><div class='persona-desc'>甜品占了 15.2%</div><div class='persona-evid'>依据：甜品累计 92 件，占全部单品 15.2%</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>薯条依赖症</span><span class='persona-conf'>可信度 72%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='72'></i></span><div class='persona-desc'>薯条类出现率 14.5%</div><div class='persona-evid'>依据：薯条类累计 88 件，占全部单品 14.5%</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>汉堡原教旨</span><span class='persona-conf'>可信度 69%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='69'></i></span><div class='persona-desc'>汉堡占比 24.8%</div><div class='persona-evid'>依据：汉堡累计 150 件，占全部单品 24.8%</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>嗜辣星人</span><span class='persona-conf'>可信度 60%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='60'></i></span><div class='persona-desc'>12.1% 的单品带「辣」字</div><div class='persona-evid'>依据：共 605 件单品，其中 73 件带「辣」字</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>咖啡续命</span><span class='persona-conf'>可信度 59%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='59'></i></span><div class='persona-desc'>咖啡类占比 8.3%</div><div class='persona-evid'>依据：咖啡类累计 50 件，占全部单品 8.3%</div></div><p class='muted reveal'>样本：160 单 / 605 件单品。可信度会随样本量打折，样本越薄折得越狠。</p></div></section><section class='scene' id='ch5' data-title='这一年的变化'><div class='scene-inner'><p class='ch-no'>CHAPTER 05</p><h2 class='ch-title'>这一年的变化</h2><p class='ch-sub'>前半程和后半程各吃了什么，差距一目了然</p><div class='card reveal'><h3>口味变化（品类占比）</h3><p class='muted'>按订单序号对半；前半 80 单（<span class='pv' data-mask='已隐藏'>2025-09-13</span> ~ <span class='pv' data-mask='已隐藏'>2026-03-29</span>），后半 80 单（<span class='pv' data-mask='已隐藏'>2026-03-31</span> ~ <span class='pv' data-mask='已隐藏'>2026-10-13</span>）</p><ul class='shift'><li class='reveal'><div class='shift-head'><b>小食</b><span class='delta up'>+2.3 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='30'></i></span><span>30.0%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='32'></i></span><span>32.3%</span></div></li><li class='reveal'><div class='shift-head'><b>甜品</b><span class='delta down'>-2.0 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='16'></i></span><span>16.3%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='14'></i></span><span>14.3%</span></div></li><li class='reveal'><div class='shift-head'><b>饮料</b><span class='delta down'>-1.5 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='14'></i></span><span>14.8%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='13'></i></span><span>13.4%</span></div></li><li class='reveal'><div class='shift-head'><b>早餐</b><span class='delta up'>+1.2 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='7'></i></span><span>7.8%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='9'></i></span><span>9.0%</span></div></li></ul></div><div class='card reveal'><h3>月度订单趋势</h3><div class='month-chart'><div title='2025-09：8 单'><i style='height:48px'></i><em>09月</em></div><div title='2025-10：14 单'><i style='height:80px'></i><em>10月</em></div><div title='2025-11：9 单'><i style='height:53px'></i><em>11月</em></div><div title='2025-12：17 单'><i style='height:96px'></i><em>12月</em></div><div title='2026-01：11 单'><i style='height:64px'></i><em>01月</em></div><div title='2026-02：13 单'><i style='height:74px'></i><em>02月</em></div><div title='2026-03：9 单'><i style='height:53px'></i><em>03月</em></div><div title='2026-04：9 单'><i style='height:53px'></i><em>04月</em></div><div title='2026-05：9 单'><i style='height:53px'></i><em>05月</em></div><div title='2026-06：16 单'><i style='height:90px'></i><em>06月</em></div><div title='2026-07：15 单'><i style='height:85px'></i><em>07月</em></div><div title='2026-08：12 单'><i style='height:69px'></i><em>08月</em></div><div title='2026-09：12 单'><i style='height:69px'></i><em>09月</em></div><div title='2026-10：6 单'><i style='height:37px'></i><em>10月</em></div></div><p class='muted'>柱子越高表示当月订单越多，横向可滑动。</p></div><div class='card reveal'><h3>趣味记录</h3><div class='pills'><span class='pill'>记录跨度 396 天</span><span class='pill'>最长连续打卡 4 天</span><span class='pill'>覆盖 14 个月</span><span class='pill'>常去门店 4 家</span></div></div></div></section><section class='scene' id='ch6' data-title='年度终章'><div class='scene-inner'><p class='ch-no'>CHAPTER 06</p><h2 class='ch-title'>年度终章</h2><p class='ch-sub'>年度关键词、下一次尝鲜，以及一张可以放心分享的卡片</p><div class='card reveal'><h3>年度关键词</h3><div class='keywords'><span>#麦乐鸡（5块）<i>全年点了 39 次，年度单品</i></span><span>#小食控<i>小食类一共 189 件</i></span><span>#午餐档<i>59 单发生在这个时段</i></span><span>#甜食主义<i>甜品占了 15.2%</i></span><span>#板烧鸡腿堡+玉米杯<i>这对组合同单出现 7 次</i></span><span>#麦当劳（公司楼下餐厅）<i>去了 43 次，你的主场</i></span></div></div><div class='card reveal'><h3>下次试试</h3><div class='rec reveal'><div class='n'>扭扭薯条</div><div class='r'>「小食」后半程占比上升了 2.3 个百分点；「小食」是你点得最多的品类，这一款还没试过</div></div><div class='rec reveal'><div class='n'>脆香鸡</div><div class='r'>「小食」后半程占比上升了 2.3 个百分点；「小食」是你点得最多的品类，这一款还没试过</div></div><div class='rec reveal'><div class='n'>安格斯MAX厚牛堡</div><div class='r'>你偏爱「汉堡」，这一款还没试过；这个品类你一共在 82 单里点过</div></div><div class='rec reveal'><div class='n'>双层牛柳汉堡</div><div class='r'>你偏爱「汉堡」，这一款还没试过；这个品类你一共在 82 单里点过</div></div><div class='rec reveal'><div class='n'>奶昔</div><div class='r'>你偏爱「甜品」，这一款还没试过</div></div></div><div class='share-panel reveal'><h3 style='font-size:15px;margin-bottom:4px'>生成分享卡片</h3><p class='muted' style='margin-top:0'>竖版 1080×1920，适配常见手机屏幕。下面三项默认关闭；未勾选的字段不会画进图片，也不会写进配置。</p><div class='switches'><label class='sw'><input type='checkbox' id='f-amount'><span>展示消费金额</span><em>默认隐藏</em></label><label class='sw'><input type='checkbox' id='f-store'><span>展示门店名称</span><em>默认隐藏</em></label><label class='sw'><input type='checkbox' id='f-date'><span>展示消费日期</span><em>默认隐藏</em></label></div><div class='card-preview'><canvas id='cardCanvas' width='1080' height='1920' aria-label='分享卡片预览'>当前浏览器不支持 Canvas，无法预览与导出分享卡片。</canvas></div><ul class='field-preview' id='fieldPreview'></ul><div class='actions'><button type='button' id='downloadCard'>导出 share-card.png</button><button type='button' id='copyConfig' class='ghost'>复制卡片配置</button></div><pre class='muted' id='configOut' style='white-space:pre-wrap;margin-top:12px'></pre><div class='warn'>卡片由本机 Canvas 绘制并导出，不含位置、账号等元数据；但画面上的文字就是图片的全部内容，公开前仍请自己看一眼。另外：story.html 本身包含完整数据，分享请发 PNG，不要直接转发这个 HTML 文件。</div></div><div class='card reveal'><h3>数据说明（与卡片同源）</h3><ul class='field-preview'><li><span>数据来源   示例数据 · 虚构生成，非真实订单</span></li><li><span>统计区间   <span class='pv' data-mask='已隐藏'>2025-09-13</span>  ~  <span class='pv' data-mask='已隐藏'>2026-10-13</span></span></li><li><span>订单覆盖   160 单（原始 160 条，去重 0 条，翻页 1 页）</span></li><li><span>字段完整   有日期 160/160，有金额 160/160，有明细 160/160</span></li><li><span>覆盖范围   示例数据由程序生成，仅用于演示输出效果</span></li><li><span>提示       本报告的订单由程序生成，不来自任何真实账号，仅用于演示输出效果</span></li><li><span>提示       运行 `mcdtm fetch` 可替换为你的真实订单数据</span></li></ul></div></div></section><footer class='foot'><p>本页订单由程序生成，不来自任何真实账号。</p><p>统计范围与缺失情况见第 6 章「数据说明」；餐品信息、价格与营养数据以麦当劳官方渠道实时结果为准，本工具不构成营养或医疗建议。</p><p>麦麦时光机是麦当劳程序员创意开发大赛参赛作品，由参赛者独立开发，非麦当劳官方产品。　<a href='report.html'>查看完整数据报告</a></p></footer>
+<div class='mode-banner personal' role='note'><b>个人完整版</b> 本文件包含你的原始数据：累计金额、门店名称、具体日期都在里面；页面左下角「隐私浏览」开关只是<b>临时遮挡</b>，不会从文件里删掉任何内容，请勿直接转发本文件。要对外分享，请用 <code>mcdtm story --privacy public</code> 另生成一份公开版，或只发第 6 章导出的 share-card.png。</div><section class='scene scene-hero' id='ch1' data-title='时光机启动'><div class='scene-inner'><p class='hero-eyebrow'>MCD TIME MACHINE</p><h1 class='hero-title'>你的 2026 麦麦年度回忆</h1><p class='hero-range'>统计区间 <span class='pv' data-mask='已隐藏'>2025-09-14</span> ~ <span class='pv' data-mask='已隐藏'>2026-10-14</span></p><span class='badge demo'>示例数据 · 虚构生成，非真实订单</span><span class='badge ghost'>160 单已解析</span><div class='hero-stats'><div><b>160 单</b><span>订单总数</span></div><div><b>605 件</b><span>单品总数</span></div><div><b>396 天</b><span>记录跨度</span></div><div><b>5 天</b><span>最长连续打卡</span></div></div><a class='cta' href='#ch2'>进入故事</a><p class='hero-hint'>向下滚动即可翻页，右侧圆点可跳章；想先核对数据可看同目录 report.html</p></div></section><section class='scene' id='ch2' data-title='故事的起点'><div class='scene-inner'><p class='ch-no'>CHAPTER 02</p><h2 class='ch-title'>故事的起点</h2><p class='ch-sub'>从最早的一单开始，把这一年重新走一遍</p><div class='card first-order reveal'><div class='date'><span class='pv' data-mask='已隐藏'>2025-09-14</span></div><div class='muted' style='margin-top:0'>这是这段记录里最早的一单</div></div><div class='card reveal'><h3>年度回忆时间轴</h3><ul class='timeline'><li class='reveal'><div class='t'>最豪华的一单</div><div class='d'><span class='pv' data-mask='已隐藏'>2026-06-27</span> 花了 <span class='pv' data-mask='已隐藏'>¥129.00</span>，点了 板烧鸡腿堡、美式咖啡、麦辣鸡翅、拿铁。</div></li><li class='reveal'><div class='t'>最豪横的一次</div><div class='d'><span class='pv' data-mask='已隐藏'>2026-09-30</span> 一次点了 8 件。</div></li><li class='reveal'><div class='t'>最常光顾的月份</div><div class='d'><span class='pv' data-mask='已隐藏'>2025-12</span> 你点了 18 单，累计 <span class='pv' data-mask='已隐藏'>¥832.50</span>。</div></li><li class='reveal'><div class='t'>你的主场</div><div class='d'><span class='pv' data-mask='已隐藏'>麦当劳（公司楼下餐厅）</span>，一共去过 43 次。</div></li><li class='reveal'><div class='t'>深夜食堂</div><div class='d'>有 14 单发生在 21 点之后。</div></li><li class='reveal'><div class='t'>最长连续打卡</div><div class='d'>连续 5 天。</div></li></ul></div></div></section><section class='scene' id='ch3' data-title='我的麦麦日常'><div class='scene-inner'><p class='ch-no'>CHAPTER 03</p><h2 class='ch-title'>我的麦麦日常</h2><p class='ch-sub'>多久吃一次、什么时候吃、常点什么</p><div class='card reveal'><h3>消费节奏</h3><div class='stat-grid'><div><b>11.4</b><span>月均单量</span></div><div><b><span class='pv' data-mask='已隐藏'>¥53.6</span></b><span>平均客单价（累计消费）</span></div><div><b>605</b><span>单品总件数</span></div><div><b>6</b><span>涉及品类</span></div></div><p class='muted'>（均为已确认的实际支付金额，金额覆盖 160/160 单）</p></div><div class='card reveal'><h3>出没时段</h3><ul class='bars'><li><div class='bar-head'><span class='n'>清晨</span><span class='v'>14 单</span></div><span class='track'><i class='fill' data-w='26'></i></span></li><li><div class='bar-head'><span class='n'>早餐</span><span class='v'>16 单</span></div><span class='track'><i class='fill' data-w='30'></i></span></li><li><div class='bar-head'><span class='n'>午餐</span><span class='v'>54 单</span></div><span class='track'><i class='fill' data-w='100'></i></span></li><li><div class='bar-head'><span class='n'>下午茶</span><span class='v'>13 单</span></div><span class='track'><i class='fill' data-w='24'></i></span></li><li><div class='bar-head'><span class='n'>晚餐</span><span class='v'>49 单</span></div><span class='track'><i class='fill' data-w='91'></i></span></li><li><div class='bar-head'><span class='n'>夜宵</span><span class='v'>14 单</span></div><span class='track'><i class='fill' data-w='26'></i></span></li></ul></div><div class='card reveal'><h3>一周节奏</h3><ul class='bars'><li><div class='bar-head'><span class='n'>周一</span><span class='v'>30 单</span></div><span class='track'><i class='fill' data-w='100'></i></span></li><li><div class='bar-head'><span class='n'>周二</span><span class='v'>25 单</span></div><span class='track'><i class='fill' data-w='83'></i></span></li><li><div class='bar-head'><span class='n'>周三</span><span class='v'>16 单</span></div><span class='track'><i class='fill' data-w='53'></i></span></li><li><div class='bar-head'><span class='n'>周四</span><span class='v'>22 单</span></div><span class='track'><i class='fill' data-w='73'></i></span></li><li><div class='bar-head'><span class='n'>周五</span><span class='v'>28 单</span></div><span class='track'><i class='fill' data-w='93'></i></span></li><li><div class='bar-head'><span class='n'>周六</span><span class='v'>15 单</span></div><span class='track'><i class='fill' data-w='50'></i></span></li><li><div class='bar-head'><span class='n'>周日</span><span class='v'>24 单</span></div><span class='track'><i class='fill' data-w='80'></i></span></li></ul></div><div class='card reveal'><h3>品类偏好</h3><ul class='bars'><li><div class='bar-head'><span class='n'>小食</span><span class='v'>189 件 · 31.2%</span></div><span class='track'><i class='fill' data-w='100'></i></span></li><li><div class='bar-head'><span class='n'>汉堡</span><span class='v'>150 件 · 24.8%</span></div><span class='track'><i class='fill' data-w='79'></i></span></li><li><div class='bar-head'><span class='n'>甜品</span><span class='v'>92 件 · 15.2%</span></div><span class='track'><i class='fill' data-w='49'></i></span></li><li><div class='bar-head'><span class='n'>饮料</span><span class='v'>85 件 · 14.0%</span></div><span class='track'><i class='fill' data-w='45'></i></span></li><li><div class='bar-head'><span class='n'>早餐</span><span class='v'>51 件 · 8.4%</span></div><span class='track'><i class='fill' data-w='27'></i></span></li><li><div class='bar-head'><span class='n'>沙拉</span><span class='v'>38 件 · 6.3%</span></div><span class='track'><i class='fill' data-w='20'></i></span></li></ul></div><div class='card reveal'><h3>常点单品</h3><div class='pills'><span class='pill'>麦乐鸡（5块） <i>× 39</i></span><span class='pill'>麦辣鸡翅 <i>× 38</i></span><span class='pill'>板烧鸡腿堡 <i>× 38</i></span><span class='pill'>玉米杯 <i>× 38</i></span><span class='pill'>麦旋风 <i>× 38</i></span><span class='pill'>中可乐 <i>× 35</i></span><span class='pill'>麦辣鸡腿堡 <i>× 35</i></span><span class='pill'>中薯条 <i>× 35</i></span><span class='pill'>薯饼 <i>× 32</i></span><span class='pill'>拿铁 <i>× 32</i></span></div></div><div class='card reveal'><h3>黄金搭档</h3><div class='pills'><span class='pill'>板烧鸡腿堡 + 玉米杯 <i>7 次同单</i></span><span class='pill'>板烧鸡腿堡 + 麦辣鸡翅 <i>7 次同单</i></span><span class='pill'>新地 + 麦乐鸡（5块） <i>6 次同单</i></span><span class='pill'>双层吉士汉堡 + 麦辣鸡翅 <i>6 次同单</i></span><span class='pill'>中可乐 + 早餐全餐 <i>6 次同单</i></span></div></div></div></section><section class='scene' id='ch4' data-title='口味人格测试结果'><div class='scene-inner'><p class='ch-no'>CHAPTER 04</p><h2 class='ch-title'>口味人格测试结果</h2><p class='ch-sub'>每条结论都附上可信度与数据依据，可以逐条核对</p><div class='persona-card persona-main reveal'><div class='persona-top'><span class='persona-name'>甜食主义</span><span class='persona-conf'>可信度 95%（高）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='95'></i></span><div class='persona-desc'>甜品占了 15.2%</div><div class='persona-evid'>依据：甜品累计 92 件，占全部单品 15.2%</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>薯条依赖症</span><span class='persona-conf'>可信度 72%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='72'></i></span><div class='persona-desc'>薯条类出现率 14.5%</div><div class='persona-evid'>依据：薯条类累计 88 件，占全部单品 14.5%</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>汉堡原教旨</span><span class='persona-conf'>可信度 69%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='69'></i></span><div class='persona-desc'>汉堡占比 24.8%</div><div class='persona-evid'>依据：汉堡累计 150 件，占全部单品 24.8%</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>嗜辣星人</span><span class='persona-conf'>可信度 60%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='60'></i></span><div class='persona-desc'>12.1% 的单品带「辣」字</div><div class='persona-evid'>依据：共 605 件单品，其中 73 件带「辣」字</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>咖啡续命</span><span class='persona-conf'>可信度 59%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='59'></i></span><div class='persona-desc'>咖啡类占比 8.3%</div><div class='persona-evid'>依据：咖啡类累计 50 件，占全部单品 8.3%</div></div><p class='muted reveal'>样本：160 单 / 605 件单品。可信度会随样本量打折，样本越薄折得越狠。</p></div></section><section class='scene' id='ch5' data-title='这一年的变化'><div class='scene-inner'><p class='ch-no'>CHAPTER 05</p><h2 class='ch-title'>这一年的变化</h2><p class='ch-sub'>前半程和后半程各吃了什么，差距一目了然</p><div class='card reveal'><h3>口味变化（品类占比）</h3><p class='muted'>按订单序号对半；前半 80 单（<span class='pv' data-mask='已隐藏'>2025-09-14</span> ~ <span class='pv' data-mask='已隐藏'>2026-03-30</span>），后半 80 单（<span class='pv' data-mask='已隐藏'>2026-03-31</span> ~ <span class='pv' data-mask='已隐藏'>2026-10-14</span>）</p><ul class='shift'><li class='reveal'><div class='shift-head'><b>小食</b><span class='delta up'>+2.3 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='30'></i></span><span>30.0%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='32'></i></span><span>32.3%</span></div></li><li class='reveal'><div class='shift-head'><b>甜品</b><span class='delta down'>-2.0 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='16'></i></span><span>16.3%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='14'></i></span><span>14.3%</span></div></li><li class='reveal'><div class='shift-head'><b>饮料</b><span class='delta down'>-1.5 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='14'></i></span><span>14.8%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='13'></i></span><span>13.4%</span></div></li><li class='reveal'><div class='shift-head'><b>早餐</b><span class='delta up'>+1.2 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='7'></i></span><span>7.8%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='9'></i></span><span>9.0%</span></div></li></ul></div><div class='card reveal'><h3>月度订单趋势</h3><div class='month-chart'><div title='2025-09：8 单'><i style='height:46px'></i><em>09月</em></div><div title='2025-10：14 单'><i style='height:76px'></i><em>10月</em></div><div title='2025-11：8 单'><i style='height:46px'></i><em>11月</em></div><div title='2025-12：18 单'><i style='height:96px'></i><em>12月</em></div><div title='2026-01：11 单'><i style='height:61px'></i><em>01月</em></div><div title='2026-02：12 单'><i style='height:66px'></i><em>02月</em></div><div title='2026-03：10 单'><i style='height:56px'></i><em>03月</em></div><div title='2026-04：9 单'><i style='height:51px'></i><em>04月</em></div><div title='2026-05：9 单'><i style='height:51px'></i><em>05月</em></div><div title='2026-06：16 单'><i style='height:86px'></i><em>06月</em></div><div title='2026-07：14 单'><i style='height:76px'></i><em>07月</em></div><div title='2026-08：13 单'><i style='height:71px'></i><em>08月</em></div><div title='2026-09：12 单'><i style='height:66px'></i><em>09月</em></div><div title='2026-10：6 单'><i style='height:36px'></i><em>10月</em></div></div><p class='muted'>柱子越高表示当月订单越多，横向可滑动。</p></div><div class='card reveal'><h3>趣味记录</h3><div class='pills'><span class='pill'>记录跨度 396 天</span><span class='pill'>最长连续打卡 5 天</span><span class='pill'>覆盖 14 个月</span><span class='pill'>常去门店 4 家</span></div></div></div></section><section class='scene' id='ch6' data-title='年度终章'><div class='scene-inner'><p class='ch-no'>CHAPTER 06</p><h2 class='ch-title'>年度终章</h2><p class='ch-sub'>年度关键词、下一次尝鲜，以及一张可以放心分享的卡片</p><div class='card reveal'><h3>年度关键词</h3><div class='keywords'><span>#麦乐鸡（5块）<i>全年点了 39 次，年度单品</i></span><span>#小食控<i>小食类一共 189 件</i></span><span>#午餐档<i>54 单发生在这个时段</i></span><span>#甜食主义<i>甜品占了 15.2%</i></span><span>#板烧鸡腿堡+玉米杯<i>这对组合同单出现 7 次</i></span><span>#麦当劳（公司楼下餐厅）<i>去了 43 次，你的主场</i></span></div></div><div class='card reveal'><h3>下次试试</h3><div class='rec reveal'><div class='n'>扭扭薯条</div><div class='r'>「小食」后半程占比上升了 2.3 个百分点；「小食」是你点得最多的品类，这一款还没试过</div></div><div class='rec reveal'><div class='n'>脆香鸡</div><div class='r'>「小食」后半程占比上升了 2.3 个百分点；「小食」是你点得最多的品类，这一款还没试过</div></div><div class='rec reveal'><div class='n'>安格斯MAX厚牛堡</div><div class='r'>你偏爱「汉堡」，这一款还没试过；这个品类你一共在 82 单里点过</div></div><div class='rec reveal'><div class='n'>双层牛柳汉堡</div><div class='r'>你偏爱「汉堡」，这一款还没试过；这个品类你一共在 82 单里点过</div></div><div class='rec reveal'><div class='n'>奶昔</div><div class='r'>你偏爱「甜品」，这一款还没试过</div></div></div><div class='share-panel reveal'><h3 style='font-size:15px;margin-bottom:4px'>生成分享卡片</h3><p class='muted' style='margin-top:0'>竖版 1080×1920，适配常见手机屏幕。下面四项默认关闭；未勾选的字段不会画进图片，也不会写进配置。</p><div class='switches'><label class='sw'><input type='checkbox' id='f-amount'><span>展示消费金额</span><em>默认隐藏</em></label><label class='sw'><input type='checkbox' id='f-store'><span>展示门店名称</span><em>默认隐藏</em></label><label class='sw'><input type='checkbox' id='f-date'><span>展示消费日期</span><em>默认隐藏</em></label><label class='sw'><input type='checkbox' id='f-generated'><span>展示生成时间</span><em>默认隐藏</em></label></div><div class='card-preview'><canvas id='cardCanvas' width='1080' height='1920' aria-label='分享卡片预览'>当前浏览器不支持 Canvas，无法预览与导出分享卡片。</canvas></div><ul class='field-preview' id='fieldPreview'></ul><div class='actions'><button type='button' id='downloadCard'>导出 share-card.png</button><button type='button' id='copyConfig' class='ghost'>复制卡片配置</button></div><pre class='muted' id='configOut' style='white-space:pre-wrap;margin-top:12px'></pre><div class='warn'>卡片由本机 Canvas 绘制并导出，不含位置、账号等元数据；但画面上的文字就是图片的全部内容，公开前仍请自己看一眼。另外：story.html 本身包含完整数据，分享请发 PNG，不要直接转发这个 HTML 文件。</div></div><div class='card reveal'><h3>数据说明（与卡片同源）</h3><ul class='field-preview'><li><span>数据来源   示例数据 · 虚构生成，非真实订单</span></li><li><span>统计区间   <span class='pv' data-mask='已隐藏'>2025-09-14</span>  ~  <span class='pv' data-mask='已隐藏'>2026-10-14</span></span></li><li><span>订单覆盖   160 单（原始 160 条，去重 0 条，翻页 1 页）</span></li><li><span>字段完整   有日期 160/160，有金额 160/160，有明细 160/160</span></li><li><span>覆盖范围   示例数据由程序生成，仅用于演示输出效果</span></li><li><span>提示       本报告的订单由程序生成，不来自任何真实账号，仅用于演示输出效果</span></li><li><span>提示       运行 `mcdtm fetch` 可替换为你的真实订单数据</span></li></ul></div></div></section><footer class='foot'><p>本页订单由程序生成，不来自任何真实账号。</p><p>统计范围与缺失情况见第 6 章「数据说明」；餐品信息、价格与营养数据以麦当劳官方渠道实时结果为准，本工具不构成营养或医疗建议。</p><p>麦麦时光机是麦当劳程序员创意开发大赛参赛作品，由参赛者独立开发，非麦当劳官方产品。　<a href='report.html'>查看完整数据报告</a>　<a href='story-public.html'>公开分享版长什么样</a></p></footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script id="story-data" type="application/json">{"version": "2.0.0", "title": "麦麦时光机 · 我的年度回忆", "persona": "甜食主义", "persona_desc": "甜品占了 15.2%", "keywords": ["麦乐鸡（5块）", "小食控", "午餐档"], "source_label": "示例数据 · 虚构生成，非真实订单", "is_demo": true, "range_text": "2025-09-13 ~ 2026-10-13", "generated_at": "2026-10-16 03:28", "privacy": {"amount": false, "store": false, "date": false}, "fields": {"amount": {"label": "消费金额", "value": "累计消费 ¥8,580.00", "hidden_text": "已隐藏"}, "store": {"label": "门店名称", "value": "麦当劳（公司楼下餐厅） · 43 次", "hidden_text": "已隐藏"}, "date": {"label": "消费日期", "value": "2025-09-13 ~ 2026-10-13", "hidden_text": "已隐藏"}}}</script>
+<script id="story-data" type="application/json">{"version": "2.0.0", "title": "麦麦时光机 · 我的年度回忆", "persona": "甜食主义", "persona_desc": "甜品占了 15.2%", "keywords": ["麦乐鸡（5块）", "小食控", "午餐档"], "source_label": "示例数据 · 虚构生成，非真实订单", "is_demo": true, "privacy_mode": "personal", "redacted": false, "range_text": "2025-09-14 ~ 2026-10-14", "generated_at": "2026-10-16 18:44", "privacy": {"amount": false, "store": false, "date": false, "generated": false}, "fields": {"amount": {"label": "消费金额", "value": "累计消费 ¥8,580.00", "hidden_text": "已隐藏", "available": true}, "store": {"label": "门店名称", "value": "麦当劳（公司楼下餐厅） · 43 次", "hidden_text": "已隐藏", "available": true}, "date": {"label": "消费日期", "value": "2025-09-14 ~ 2026-10-14", "hidden_text": "已隐藏", "available": true}, "generated": {"label": "生成时间", "value": "2026-10-16 18:44", "hidden_text": "已隐藏", "available": true}}}</script>
 <script>
 /* 麦麦时光机 · 故事页交互（V2.0）
  *
@@ -847,6 +885,28 @@ html.story-privacy .pv::after {
       ' "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
   }
 
+  /* 卡片内边距固定 84px，所有可绘制内容的硬边界都在这个区间内 */
+  var PAD = 84;
+  var INNER = CARD_W - PAD * 2;      // 912
+  var FOOT_TOP = CARD_H - 260;       // 页脚上沿，正文块不得越过
+
+  /* 单行截断：超出 maxWidth 时逐字回退并补省略号。
+   * 商品名 / 门店名长度不可控，直接 fillText 会溢出画布或压到相邻元素上。 */
+  function clip(ctx, text, maxWidth) {
+    var s = String(text == null ? "" : text);
+    if (!s || maxWidth <= 0) return "";
+    if (ctx.measureText(s).width <= maxWidth) return s;
+    var ell = "…";
+    var ellW = ctx.measureText(ell).width;
+    var out = "";
+    for (var i = 0; i < s.length; i++) {
+      var next = out + s[i];
+      if (ctx.measureText(next).width + ellW > maxWidth) break;
+      out = next;
+    }
+    return out ? out + ell : "";
+  }
+
   function roundRect(ctx, x, y, w, h, r) {
     var rr = Math.min(r, w / 2, h / 2);
     ctx.beginPath();
@@ -862,12 +922,14 @@ html.story-privacy .pv::after {
     ctx.closePath();
   }
 
-  /* 中英混排换行：CJK 逐字断行，连续 ASCII 视为整体，避免单词被劈开 */
-  function wrap(ctx, text, maxWidth) {
+  /* 中英混排换行：CJK 逐字断行，连续 ASCII 视为整体，避免单词被劈开。
+   * 超出 maxLines 时末行补省略号——宁可明示截断，也不静默吞掉内容。 */
+  function wrap(ctx, text, maxWidth, maxLines) {
     var lines = [];
     var line = "";
-    for (var i = 0; i < text.length; i++) {
-      var ch = text[i];
+    var s = String(text == null ? "" : text);
+    for (var i = 0; i < s.length; i++) {
+      var ch = s[i];
       if (ctx.measureText(line + ch).width <= maxWidth || line === "") {
         line += ch;
       } else {
@@ -876,26 +938,35 @@ html.story-privacy .pv::after {
       }
     }
     if (line) lines.push(line);
+    if (maxLines && lines.length > maxLines) {
+      var kept = lines.slice(0, maxLines);
+      var last = kept[maxLines - 1];
+      kept[maxLines - 1] = clip(ctx, last + "…", maxWidth) || last;
+      return kept;
+    }
     return lines;
   }
 
-  function drawWrapped(ctx, text, x, y, maxWidth, lineHeight) {
-    var lines = wrap(ctx, String(text == null ? "" : text), maxWidth);
+  function drawWrapped(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+    var lines = wrap(ctx, text, maxWidth, maxLines);
     for (var i = 0; i < lines.length; i++) {
       ctx.fillText(lines[i], x, y + i * lineHeight);
     }
     return y + lines.length * lineHeight;
   }
 
-  function chip(ctx, text, x, y, padX, height) {
+  /* 关键词胶囊：单个词先按可用宽度截断，再据此算胶囊宽度，
+   * 保证任何长度都不会顶出卡片左右边界。 */
+  function chip(ctx, text, x, y, padX, height, maxWidth) {
     ctx.font = font(34, 600);
-    var w = ctx.measureText(text).width + padX * 2;
+    var label = clip(ctx, text, Math.max(0, (maxWidth || INNER) - padX * 2));
+    var w = ctx.measureText(label).width + padX * 2;
     ctx.fillStyle = "rgba(255,255,255,.16)";
     roundRect(ctx, x, y, w, height, height / 2);
     ctx.fill();
     ctx.fillStyle = "#FFFFFF";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, x + padX, y + height / 2 + 1);
+    ctx.fillText(label, x + padX, y + height / 2 + 1);
     ctx.textBaseline = "alphabetic";
     return w;
   }
@@ -926,19 +997,19 @@ html.story-privacy .pv::after {
     // 头部
     ctx.fillStyle = soft;
     ctx.font = font(34, 500);
-    ctx.fillText("麦麦时光机 · 我的年度回忆", 84, 168);
+    ctx.fillText("麦麦时光机 · 我的年度回忆", PAD, 168);
 
     ctx.fillStyle = white;
     ctx.font = font(78, 800);
-    ctx.fillText("我的年度回忆", 84, 272);
+    ctx.fillText("我的年度回忆", PAD, 272);
 
     ctx.fillStyle = "rgba(255,255,255,.30)";
-    ctx.fillRect(84, 312, 300, 4);
+    ctx.fillRect(PAD, 312, 300, 4);
 
     // 口味人格
     var panelY = 386;
     ctx.fillStyle = "rgba(255,255,255,.12)";
-    roundRect(ctx, 84, panelY, CARD_W - 168, 470, 36);
+    roundRect(ctx, PAD, panelY, INNER, 470, 36);
     ctx.fill();
 
     ctx.fillStyle = soft;
@@ -947,38 +1018,57 @@ html.story-privacy .pv::after {
 
     ctx.fillStyle = "#FFC72C";
     ctx.font = font(86, 800);
-    var personaLines = wrap(ctx, cfg.persona, CARD_W - 300);
-    for (var i = 0; i < Math.min(personaLines.length, 2); i++) {
+    // 最多两行；截断时末行补省略号，不会溢出面板
+    var personaLines = wrap(ctx, cfg.persona, INNER - 96, 2);
+    for (var i = 0; i < personaLines.length; i++) {
       ctx.fillText(personaLines[i], 132, panelY + 186 + i * 100);
     }
 
     ctx.fillStyle = "rgba(255,255,255,.90)";
     ctx.font = font(34, 400);
-    var descTop = panelY + 186 + Math.min(personaLines.length, 2) * 100 + 30;
-    drawWrapped(ctx, cfg.personaDesc, 132, descTop, CARD_W - 300, 48);
+    var descTop = panelY + 186 + personaLines.length * 100 + 30;
+    drawWrapped(ctx, cfg.personaDesc, 132, descTop, INNER - 96, 48, 3);
 
     // 年度关键词
     ctx.fillStyle = soft;
     ctx.font = font(32, 500);
-    ctx.fillText("年度关键词", 84, 950);
+    ctx.fillText("年度关键词", PAD, 950);
 
-    var kx = 84;
-    var ky = 1000;
+    // 先排版（不绘制），拿到关键词块的实际高度，再据此决定下方字段面板的位置，
+    // 保证面板底部不会压到页脚、也不会越出画布下沿
     var words = cfg.keywords && cfg.keywords.length ? cfg.keywords : ["还在探索中"];
+    var layout = [];
+    var kx = PAD;
+    var ky = 1000;
+    ctx.font = font(34, 600);
     for (var w = 0; w < words.length && w < 4; w++) {
       var word = String(words[w]);
-      ctx.font = font(34, 600);
-      var need = ctx.measureText(word).width + 56;
-      if (kx + need > CARD_W - 84) { kx = 84; ky += 84; }
-      var used = chip(ctx, word, kx, ky, 28, 68);
-      kx += used + 18;
+      var label = clip(ctx, word, INNER - 56);
+      var need = ctx.measureText(label).width + 56;
+      if (kx + need > CARD_W - PAD) { kx = PAD; ky += 84; }
+      layout.push({ text: word, x: kx, y: ky });
+      kx += need + 18;
+    }
+    var rows = cfg.rows || [];
+    var panelH = 78 * rows.length + 74;
+    var panelTop = ky + 150 - 56;
+    // 布局边界：整体上移，最多上移到关键词标题下方，绝不越过画布
+    var overflow = panelTop + panelH - FOOT_TOP;
+    if (overflow > 0) {
+      var shift = Math.min(overflow, ky - 1040);
+      if (shift > 0) {
+        for (var s = 0; s < layout.length; s++) layout[s].y -= shift;
+        panelTop -= shift;
+      }
+    }
+    for (var d = 0; d < layout.length; d++) {
+      chip(ctx, layout[d].text, layout[d].x, layout[d].y, 28, 68, INNER);
     }
 
     // 字段行（只包含勾选的字段；未勾选显示「已隐藏」）
-    var rows = cfg.rows || [];
-    var ry = ky + 150;
+    var ry = panelTop + 56;
     ctx.fillStyle = "rgba(255,255,255,.14)";
-    roundRect(ctx, 84, ry - 56, CARD_W - 168, 78 * rows.length + 74, 32);
+    roundRect(ctx, PAD, panelTop, INNER, panelH, 32);
     ctx.fill();
 
     ctx.textBaseline = "alphabetic";
@@ -988,27 +1078,34 @@ html.story-privacy .pv::after {
       ctx.fillStyle = soft;
       ctx.font = font(32, 500);
       ctx.fillText(row.label, 132, y);
+      var labelW = ctx.measureText(row.label).width;
 
       ctx.textAlign = "right";
-      if (row.hidden) {
-        ctx.fillStyle = "rgba(255,255,255,.55)";
-        ctx.font = font(32, 500);
-      } else {
-        ctx.fillStyle = white;
-        ctx.font = font(34, 700);
-      }
-      ctx.fillText(row.text, CARD_W - 132, y);
+      ctx.font = row.hidden ? font(32, 500) : font(34, 700);
+      ctx.fillStyle = row.hidden ? "rgba(255,255,255,.55)" : white;
+      // 值右对齐绘制：先按「不与左侧标签重叠」算出可用宽度再截断
+      var avail = CARD_W - 132 - (132 + labelW) - 32;
+      ctx.fillText(clip(ctx, row.text, avail), CARD_W - 132, y);
       ctx.textAlign = "left";
     }
 
     // 页脚
     ctx.fillStyle = "rgba(255,255,255,.72)";
     ctx.font = font(28, 400);
-    ctx.fillText(cfg.sourceLabel, 84, CARD_H - 168);
+    ctx.fillText(clip(ctx, cfg.sourceLabel, INNER), PAD, CARD_H - 168);
     ctx.fillStyle = "rgba(255,255,255,.52)";
     ctx.font = font(24, 400);
-    ctx.fillText("生成于 " + (cfg.generatedAt || "—") + " · 仅包含你勾选的字段", 84, CARD_H - 122);
-    ctx.fillText("麦麦时光机 · 大赛参赛作品 · 非麦当劳官方产品", 84, CARD_H - 80);
+    // 生成时间默认隐藏：只有用户主动勾选「生成时间」才在图上出现
+    var genRow = null;
+    for (var k = 0; k < rows.length; k++) {
+      if (rows[k].key === "generated") genRow = rows[k];
+    }
+    var genShown = !!(genRow && !genRow.hidden && genRow.available !== false);
+    var footLine = (genShown ? "生成于 " + (genRow.text || "—") + " · " : "") +
+      "仅包含你勾选的字段";
+    ctx.fillText(clip(ctx, footLine, INNER), PAD, CARD_H - 122);
+    ctx.fillText(clip(ctx, "麦麦时光机 · 大赛参赛作品 · 非麦当劳官方产品", INNER),
+      PAD, CARD_H - 80);
   }
 
   // ------------------------------------------------------------ 分享面板逻辑
@@ -1016,18 +1113,24 @@ html.story-privacy .pv::after {
     var canvas = $("cardCanvas");
     if (!canvas) return;
     var fields = (DATA.fields || {});
-    var order = ["amount", "store", "date"];
+    var order = ["amount", "store", "date", "generated"];
     var toggles = {};
     var previewList = $("fieldPreview");
     var configOut = $("configOut");
 
     function rowOf(key) {
       var f = fields[key] || { label: key, value: "—", hidden_text: "已隐藏" };
+      // 公开分享版：值根本没写进文件，只能显示占位符（勾选也没用）
+      if (f.available === false) {
+        return { key: key, label: f.label, hidden: false, available: false,
+                 text: f.value || "公开版未写入" };
+      }
       var on = !!(toggles[key] && toggles[key].checked);
       return {
         key: key,
         label: f.label,
         hidden: !on,
+        available: true,
         text: on ? f.value : (f.hidden_text || "已隐藏")
       };
     }
@@ -1091,8 +1194,12 @@ html.story-privacy .pv::after {
       lines.push("导出配置：" + JSON.stringify({
         amount: rows.some(function (r) { return r.key === "amount" && !r.hidden; }),
         store: rows.some(function (r) { return r.key === "store" && !r.hidden; }),
-        date: rows.some(function (r) { return r.key === "date" && !r.hidden; })
+        date: rows.some(function (r) { return r.key === "date" && !r.hidden; }),
+        generated: rows.some(function (r) { return r.key === "generated" && !r.hidden; })
       }));
+      if (DATA.redacted) {
+        lines.push("生成模式：公开分享版（金额 / 门店名称 / 到日日期未写入本文件）");
+      }
       return lines.join("\n");
     }
 

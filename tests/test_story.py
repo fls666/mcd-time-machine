@@ -68,14 +68,16 @@ class TestStoryStructure(unittest.TestCase):
 class TestPayload(unittest.TestCase):
     def test_privacy_defaults_all_hidden(self):
         payload = build_story_payload(_profile("demo"))
-        self.assertEqual(payload["privacy"], {"amount": False, "store": False, "date": False})
-        for key in ("amount", "store", "date"):
+        self.assertEqual(payload["privacy"],
+                         {"amount": False, "store": False, "date": False, "generated": False})
+        for key in ("amount", "store", "date", "generated"):
             self.assertEqual(payload["fields"][key]["hidden_text"], "已隐藏")
-        self.assertEqual(PRIVACY_DEFAULTS, {"amount": False, "store": False, "date": False})
+        self.assertEqual(PRIVACY_DEFAULTS,
+                         {"amount": False, "store": False, "date": False, "generated": False})
 
     def test_switches_not_checked_by_default(self):
         html = render_story(_profile("demo"))
-        for key in ("amount", "store", "date"):
+        for key in ("amount", "store", "date", "generated"):
             self.assertRegex(html, r"id='f-%s'(?! checked)" % key)
 
     def test_persona_comes_from_top_tag(self):
@@ -220,10 +222,175 @@ class TestSharePreviewInjection(unittest.TestCase):
     # ---- 隐私默认值不因视觉调整而改变
     def test_privacy_defaults_unchanged_after_fix(self):
         self.assertEqual(self.payload["privacy"],
-                         {"amount": False, "store": False, "date": False})
-        for key in ("amount", "store", "date"):
+                         {"amount": False, "store": False, "date": False, "generated": False})
+        for key in ("amount", "store", "date", "generated"):
             self.assertRegex(self.html, r"id='f-%s'(?! checked)" % key)
             self.assertEqual(self.payload["fields"][key]["hidden_text"], "已隐藏")
+
+
+class TestPublicMode(unittest.TestCase):
+    """公开分享版：敏感值必须在生成期移除，而不是靠 CSS 遮挡。"""
+
+    def setUp(self):
+        self.profile = _profile("mcp")
+        self.public = render_story(self.profile, "public")
+        self.personal = render_story(self.profile, "personal")
+        self.payload = build_story_payload(self.profile, "public")
+
+    def test_invalid_mode_rejected(self):
+        with self.assertRaises(ValueError):
+            render_story(self.profile, "secret")
+
+    def test_no_money_left(self):
+        self.assertNotIn("¥", self.public)
+        self.assertIn("¥", self.personal)
+
+    def test_no_day_precision_date_left(self):
+        self.assertIsNone(re.search(r"\d{4}-\d{2}-\d{2}", self.public))
+        self.assertTrue(re.search(r"\d{4}-\d{2}-\d{2}", self.personal))
+
+    def test_month_granularity_kept_for_trend(self):
+        """到日日期移除，但保留「年-月」粒度，否则第 5 章趋势图失去意义。"""
+        self.assertEqual(len(re.findall(r"\d{4}-\d{2}(?!-)", self.public)),
+                         len(re.findall(r"\d{4}-\d{2}(?!-)", self.personal)))
+        self.assertGreater(len(re.findall(r"\d{4}-\d{2}(?!-)", self.public)), 0)
+
+    def test_store_names_removed(self):
+        """正文只写出「最常光顾」那一家的店名，个人版保留、公开版必须没有。"""
+        from mcd_timemachine.story import _top_store, store_names
+
+        top = _top_store(self.profile).split(" · ")[0]
+        self.assertTrue(top and top != "未知门店", f"示例数据应带门店名，实际 {top!r}")
+        self.assertIn(top, self.personal)
+        self.assertNotIn(top, self.public)
+        for name in store_names(self.profile):
+            self.assertNotIn(name, self.public)
+
+    def test_payload_holds_placeholder_only(self):
+        self.assertTrue(self.payload["redacted"])
+        self.assertEqual(self.payload["privacy_mode"], "public")
+        self.assertEqual(self.payload["generated_at"], "")
+        for key in ("amount", "store", "date", "generated"):
+            self.assertEqual(self.payload["fields"][key]["value"], "公开版未写入")
+            self.assertFalse(self.payload["fields"][key]["available"])
+
+    def test_switches_disabled(self):
+        for key in ("amount", "store", "date", "generated"):
+            self.assertRegex(self.public, r"id='f-%s'[^>]*disabled" % key)
+        self.assertNotRegex(self.personal, r"id='f-amount'[^>]*disabled")
+
+    def test_html_marked_and_banner_switched(self):
+        self.assertIn('data-privacy="public"', self.public)
+        self.assertIn('data-privacy="personal"', self.personal)
+        self.assertIn("class='mode-banner public'", self.public)
+        self.assertIn("class='mode-banner personal'", self.personal)
+        self.assertIn("公开分享版", self.public)
+        self.assertIn("个人完整版", self.personal)
+
+    def test_no_link_to_full_report_in_public(self):
+        self.assertNotIn("href='report.html'", self.public)
+        self.assertIn("href='report.html'", self.personal)
+
+    def test_json_still_parses_after_redaction(self):
+        match = re.search(
+            r'<script id="story-data" type="application/json">(.*?)</script>', self.public, re.S)
+        self.assertIsNotNone(match)
+        data = json.loads(match.group(1))          # 整份 HTML 脱敏后 JSON 仍合法
+        self.assertTrue(data["redacted"])
+        self.assertNotIn("¥", json.dumps(data, ensure_ascii=False))
+        self.assertIsNone(re.search(r"\d{4}-\d{2}-\d{2}", json.dumps(data, ensure_ascii=False)))
+
+    def test_public_page_structure_intact(self):
+        for i in range(1, 7):
+            self.assertIn(f"id='ch{i}'", self.public)
+        self.assertEqual(self.public.count("<section"), self.public.count("</section>"))
+        self.assertEqual(self.public.count("<div"), self.public.count("</div>"))
+        self.assertNotIn("__STORY_", self.public)
+
+    def test_redact_html_is_idempotent_and_targeted(self):
+        from mcd_timemachine.story import redact_html
+
+        src = "<p>2026-06-27 花了 ¥129.00，在麦当劳（中心书城餐厅）</p>"
+        once = redact_html(src, ["麦当劳（中心书城餐厅）"])
+        self.assertEqual(once, "<p>日期已隐藏 花了 金额已隐藏，在门店已隐藏</p>")
+        self.assertEqual(redact_html(once, ["麦当劳（中心书城餐厅）"]), once)
+
+    def test_redact_keeps_month_tooltip(self):
+        from mcd_timemachine.story import redact_html
+
+        self.assertEqual(redact_html("title='2026-06：3 单'"), "title='2026-06：3 单'")
+
+    def test_store_names_helper(self):
+        from mcd_timemachine.story import store_names
+
+        self.assertEqual(store_names(self.profile),
+                         [s["name"] for s in self.profile["stores"] if s.get("name")])
+
+
+class TestGeneratedAtHidden(unittest.TestCase):
+    """P2：生成时间默认隐藏，只有主动勾选才进分享图片。"""
+
+    def setUp(self):
+        self.profile = _profile("demo")
+        self.html = render_story(self.profile)
+        self.payload = build_story_payload(self.profile)
+
+    def test_generated_field_exists_and_hidden(self):
+        self.assertIn("生成时间", self.html)
+        self.assertRegex(self.html, r"id='f-generated'(?! checked)")
+        self.assertEqual(self.payload["privacy"]["generated"], False)
+
+    def test_generated_value_is_profile_timestamp(self):
+        self.assertEqual(self.payload["fields"]["generated"]["value"],
+                         self.profile["generated_at"])
+
+    def test_export_config_includes_generated_flag(self):
+        js = (Path(__file__).resolve().parent.parent
+              / "mcd_timemachine" / "assets" / "story.js").read_text(encoding="utf-8")
+        self.assertIn('r.key === "generated"', js)
+        self.assertIn("生成于 ", js)
+
+    def test_card_does_not_draw_time_when_unchecked(self):
+        """绘制逻辑必须以行的可见状态为准，不能无条件写死时间。"""
+        js = (Path(__file__).resolve().parent.parent
+              / "mcd_timemachine" / "assets" / "story.js").read_text(encoding="utf-8")
+        self.assertIn("genShown", js)
+        self.assertNotIn('"生成于 " + (cfg.generatedAt', js)
+
+
+class TestCardLayoutGuards(unittest.TestCase):
+    """P1：长文本不得溢出画布。绘制前必须先约束宽度。"""
+
+    def setUp(self):
+        self.js = (Path(__file__).resolve().parent.parent
+                   / "mcd_timemachine" / "assets" / "story.js").read_text(encoding="utf-8")
+
+    def test_clip_helper_used_at_every_text_site(self):
+        self.assertIn("function clip(ctx, text, maxWidth)", self.js)
+        for site in ("chip(ctx, layout[d].text, layout[d].x, layout[d].y, 28, 68, INNER)",
+                     "wrap(ctx, cfg.persona, INNER - 96, 2)",
+                     "clip(ctx, row.text, avail)",
+                     "clip(ctx, cfg.sourceLabel, INNER)"):
+            self.assertIn(site, self.js, f"绘制位置缺少宽度约束：{site}")
+
+    def test_field_value_reserves_label_width(self):
+        self.assertIn("var avail = CARD_W - 132 - (132 + labelW) - 32;", self.js)
+
+    def test_keyword_block_is_measured_before_drawing(self):
+        """先排版再绘制，才能把关键词块高度算进下方面板的位置。"""
+        self.assertIn("var layout = [];", self.js)
+        self.assertIn("var overflow = panelTop + panelH - FOOT_TOP;", self.js)
+
+    def test_long_word_chip_is_clipped_not_overflown(self):
+        self.assertIn("clip(ctx, text, Math.max(0, (maxWidth || INNER) - padX * 2))", self.js)
+
+    def test_wrap_marks_truncation(self):
+        """超过行数上限要补省略号，而不是静默丢掉后半段。"""
+        self.assertIn('clip(ctx, last + "…", maxWidth) || last', self.js)
+
+    def test_within_canvas_constants(self):
+        self.assertIn("var INNER = CARD_W - PAD * 2;", self.js)
+        self.assertIn("var FOOT_TOP = CARD_H - 260;", self.js)
 
 
 class TestNoShadowedHelper(unittest.TestCase):
@@ -379,6 +546,38 @@ class TestCliStory(unittest.TestCase):
     def test_story_without_profile(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(main(["story", "--out", tmp]), 1)
+
+    def test_privacy_public_flag_after_subcommand(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(
+                main(["demo", "--count", "30", "--out", tmp, "--privacy", "public"]), 0)
+            html = (Path(tmp) / "story.html").read_text(encoding="utf-8")
+            self.assertIn('data-privacy="public"', html)
+            self.assertNotIn("¥", html)
+            # report.html 仍是完整报告，不受 --privacy 影响
+            self.assertIn("¥", (Path(tmp) / "report.html").read_text(encoding="utf-8"))
+
+    def test_privacy_public_flag_before_subcommand(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(
+                main(["--privacy", "public", "demo", "--count", "20", "--out", tmp]), 0)
+            html = (Path(tmp) / "story.html").read_text(encoding="utf-8")
+            self.assertIn('data-privacy="public"', html)
+
+    def test_story_command_can_switch_mode_without_reanalysis(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(main(["demo", "--count", "30", "--out", tmp]), 0)
+            story = Path(tmp) / "story.html"
+            self.assertIn('data-privacy="personal"', story.read_text(encoding="utf-8"))
+            self.assertEqual(main(["story", "--out", tmp, "--privacy", "public"]), 0)
+            public = story.read_text(encoding="utf-8")
+            self.assertIn('data-privacy="public"', public)
+            self.assertNotIn("¥", public)
+
+    def test_invalid_privacy_value_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SystemExit):
+                main(["demo", "--out", tmp, "--privacy", "secret"])
 
 
 if __name__ == "__main__":

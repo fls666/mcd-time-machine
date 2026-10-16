@@ -589,6 +589,44 @@ main { display: block; }
   line-height: 1.75;
 }
 
+/* ------------------------------------------------- 模式横幅（个人版 / 公开版） */
+
+.mode-banner {
+  margin: 12px 16px 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.mode-banner b { font-weight: 700; }
+.mode-banner code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: rgba(0, 0, 0, .07);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+/* 个人完整版：提醒文件里有原始数据 */
+.mode-banner.personal {
+  background: #FFF1D6;
+  color: #6E4400;
+  border: 1px solid #F5CE8A;
+}
+/* 公开分享版：提醒已移除敏感值，但同目录还有别的文件 */
+.mode-banner.public {
+  background: #E8F5EC;
+  color: #14532D;
+  border: 1px solid #A9D9BA;
+}
+
+/* 公开版里这些值压根没写进文件，遮挡开关没有意义，直接隐藏 */
+html[data-privacy="public"] .priv-toggle { display: none; }
+
+/* 公开版里被置灰的字段：不可勾选，说明原因 */
+.sw input:disabled + span { opacity: .62; }
+.sw input:disabled ~ em { color: #14532D; }
+
 /* ---------------------------------------------------------------- 页脚 */
 
 .foot {

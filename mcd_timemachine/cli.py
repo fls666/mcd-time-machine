@@ -11,6 +11,10 @@
 
 每次分析都会产出三份同源文件：report.md（完整报告）、report.html（完整报告网页）、
 story.html（V2.0 六章节滚动故事 + 隐私友好分享卡片）。
+
+story.html 有两种生成模式，用 `--privacy` 选择：
+    personal（默认）个人完整版：保留金额 / 门店 / 日期，页面另有「隐私浏览」临时遮挡开关；
+    public          公开分享版：金额 / 门店名 / 到日日期在生成时就从 HTML 里移除，可直接分享。
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from .demo_data import generate
 from .mcp_client import DEFAULT_ENDPOINT, McpClient, McpError, TOOLS
 from .reporter import print_console, write_reports
 from .share import write_share
+from .story import PRIVACY_MODES
 
 DEFAULT_OUT = Path("mcdtm-output")
 
@@ -64,6 +69,7 @@ def _run_analysis(
     out_dir: Path,
     extras: Dict[str, Any],
     coverage: Dict[str, Any],
+    privacy: str = "personal",
 ) -> None:
     profile = analyze(orders, extras or None, coverage)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -73,12 +79,22 @@ def _run_analysis(
     (out_dir / "provenance.json").write_text(
         json.dumps(coverage, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    paths = write_reports(profile, out_dir)
+    paths = write_reports(profile, out_dir, privacy)
     print_console(profile)
     print()
     print(f"报告已生成：{paths['html']}  {paths['md']}")
     if paths.get("story"):
         print(f"沉浸式故事：{paths['story']}（手机竖屏浏览，第 6 章可导出分享卡片）")
+        _print_privacy_hint(privacy)
+
+
+def _print_privacy_hint(privacy: str) -> None:
+    if privacy == "public":
+        print("生成模式：公开分享版 —— 金额、门店名称、到日日期已在生成时移除，本文件可直接分享。")
+        print("注意：同目录的 report.html / report.md / profile.json 仍含完整数据，不要一并发出。")
+    else:
+        print("生成模式：个人完整版 —— story.html 内含金额、门店与具体日期，请勿直接转发；")
+        print("要对外分享，可另跑 `mcdtm story --privacy public`，或只发第 6 章导出的 share-card.png。")
 
 
 # ---------------------------------------------------------------- 子命令
@@ -99,7 +115,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
         tools={"demo_data.generate": "ok"},
     )
     print(f"[demo] 已生成 {len(orders)} 条虚构订单（示例数据，非真实账号数据）")
-    _run_analysis(orders, out_dir, {}, coverage)
+    _run_analysis(orders, out_dir, {}, coverage, getattr(args, "privacy", "personal"))
     return 0
 
 
@@ -172,7 +188,8 @@ def cmd_fetch(args: argparse.Namespace) -> int:
 def cmd_analyze(args: argparse.Namespace) -> int:
     out_dir: Path = args.out
     orders = load_normalized(out_dir)
-    _run_analysis(orders, out_dir, _load_extras(out_dir), load_coverage(out_dir))
+    _run_analysis(orders, out_dir, _load_extras(out_dir), load_coverage(out_dir),
+                  getattr(args, "privacy", "personal"))
     return 0
 
 
@@ -188,11 +205,12 @@ def cmd_story(args: argparse.Namespace) -> int:
     except json.JSONDecodeError as exc:
         print(f"profile.json 解析失败：{exc}")
         return 1
+    privacy = getattr(args, "privacy", "personal")
     from .story import write_story
 
-    target = write_story(profile, out_dir)
+    target = write_story(profile, out_dir, privacy)
     print(f"已生成 {target}")
-    print("提示：story.html 内含完整数据，对外分享请用页面第 6 章导出的 share-card.png。")
+    _print_privacy_hint(privacy)
     return 0
 
 
@@ -205,7 +223,8 @@ def cmd_all(args: argparse.Namespace) -> int:
     except FileNotFoundError as exc:
         print(exc)
         return 1
-    _run_analysis(orders, args.out, _load_extras(args.out), load_coverage(args.out))
+    _run_analysis(orders, args.out, _load_extras(args.out), load_coverage(args.out),
+                  getattr(args, "privacy", "personal"))
     return 0
 
 
@@ -248,6 +267,9 @@ def _common_parser() -> argparse.ArgumentParser:
                         help=f"MCP 接入地址，默认 {DEFAULT_ENDPOINT}")
     common.add_argument("--out", type=Path, default=argparse.SUPPRESS,
                         help=f"输出目录，默认 {DEFAULT_OUT}")
+    common.add_argument("--privacy", choices=list(PRIVACY_MODES), default=argparse.SUPPRESS,
+                        help="story.html 生成模式：personal=个人完整版（默认），"
+                             "public=公开分享版（生成时即移除金额/门店名/到日日期）")
     return common
 
 
@@ -263,6 +285,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help=f"MCP 接入地址，默认 {DEFAULT_ENDPOINT}")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT,
                         help="输出目录，默认 ./mcdtm-output")
+    parser.add_argument("--privacy", choices=list(PRIVACY_MODES), default="personal",
+                        help="story.html 生成模式：personal=个人完整版（默认，含原始数据），"
+                             "public=公开分享版（金额/门店名/到日日期在生成时即移除）")
 
     sub = parser.add_subparsers(dest="command", required=True)
     common = _common_parser()

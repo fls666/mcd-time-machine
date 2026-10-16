@@ -12,9 +12,13 @@
 ## 先看效果（不用装任何东西）
 
 - **示例年度故事页（V2.0，推荐先看这个）**：[docs/preview-story.html](./docs/preview-story.html) —— 单文件、离线可看，手机竖屏体验最佳，第 6 章可导出分享卡片
+- **公开分享版示例**：[docs/preview-story-public.html](./docs/preview-story-public.html) —— 同一份数据用 `--privacy public` 生成，文件里已不含金额 / 门店名 / 到日日期
 - **示例年度报告（HTML）**：[docs/preview.html](./docs/preview.html) —— 完整数据版报告
 - **示例年度报告（Markdown）**：[docs/preview.md](./docs/preview.md)
-- **在线示例（GitHub Pages，直接点开即可）**：<https://fls666.github.io/mcd-time-machine/>（首页即故事页，`report.html` 为完整报告）
+- **分享卡片导出实物**：[docs/sample-share-card.png](./docs/sample-share-card.png)（默认四项隐藏）、
+  [docs/sample-share-card-longtext.png](./docs/sample-share-card-longtext.png)（超长文本截断）
+  —— 由 CI 里的真实 Chromium 导出，非设计稿
+- **在线示例（GitHub Pages，直接点开即可）**：<https://fls666.github.io/mcd-time-machine/>（首页即故事页，`report.html` 为完整报告，`story-public.html` 为公开分享版）
 - 由 GitHub Actions 在每次主分支更新后自动重新生成并发布；
   若 Pages 不可用（例如仓库为私有、或 Source 未设为 GitHub Actions），
   工作流会自动跳过部署，改为在 Actions 运行页提供 `preview-report` 产物下载
@@ -96,7 +100,8 @@ mcdtm demo --count 160
 | `mcdtm inspect orders` | 打印某个工具的原始返回，便于核对字段结构（**含隐私，勿公开**） |
 | `mcdtm share` | 导出**脱敏**后的结构报告 `share.json`，供排障求助（公开前仍需人工过目） |
 
-通用参数（写在子命令前后都可以）：`--token` / `--endpoint`（默认 `https://mcp.mcd.cn`）/ `--out`（默认 `./mcdtm-output`）。
+通用参数（写在子命令前后都可以）：`--token` / `--endpoint`（默认 `https://mcp.mcd.cn`）/ `--out`（默认 `./mcdtm-output`）
+/ `--privacy`（`personal` 默认，`public` 为公开分享版）。
 `fetch` 另有 `--max-pages`（默认 30）与 `--page-size`（默认 100）。
 
 ---
@@ -180,18 +185,42 @@ mcdtm demo --count 160
 | 消费金额 | **隐藏** | 勾选后才写入图片，未勾选画面显示「已隐藏」 |
 | 门店名称 | **隐藏** | 同上 |
 | 消费日期 | **隐藏** | 同上 |
+| 生成时间 | **隐藏** | 同上；不勾选时页脚也不会出现具体时刻 |
 
-- 卡片由本机 Canvas 绘制并导出，**不含位置、账号等元数据**；
+- 卡片由本机 Canvas 绘制并导出，**不含位置、账号等元数据**（导出的 PNG 里没有 `tEXt` / `iTXt` / `tIME` 等块）；
 - 未勾选的字段不会进入绘制文本，也不会写进「复制卡片配置」；
-- 页面左下角另有「隐私浏览」开关，可把故事页里的金额、门店与日期就地打码
-  （含年度回忆正文里的日期与金额，不只是统计卡）；
-- ⚠️ `story.html` **本身包含完整数据**，对外分享请发 PNG，不要直接转发 HTML 文件。
+- 单行文字都有**最大绘制宽度 + 省略号截断**：商品名、门店名再长也不会顶出画布或压到相邻文字。
 
-前端行为有专门的冒烟测试守着（用 jsdom 真跑一遍页面脚本，覆盖增强与降级两条路径）：
+### 两种生成模式：个人完整版 / 公开分享版
+
+「隐私浏览」开关只是**前端遮挡**，文件里仍有原始数据。要真正安全地分享，用生成期的脱敏模式：
 
 ```bash
+mcdtm demo  --out mcdtm-output                  # 默认 personal：个人完整版（含原始数据）
+mcdtm story --out mcdtm-output --privacy public # 公开分享版：敏感值在生成时就不写入文件
+```
+
+| 模式 | 金额 | 门店名称 | 日期 | 分享卡片字段 | 页面提示 |
+| --- | --- | --- | --- | --- | --- |
+| `personal`（默认） | 保留，页面可临时遮挡 | 保留 | 保留到日 | 四项可勾选（默认隐藏） | 顶部黄条：本文件含原始数据，请勿直接转发 |
+| `public` | **不写入文件** | **不写入文件** | 只保留「年-月」 | 四项置灰、无可展示内容 | 顶部绿条：已移除，且提示同目录其它文件仍是完整的 |
+
+- 公开版是**生成期脱敏**：不是 CSS 遮挡，`story.html` 里连一个 `¥`、一个 `2026-06-27` 形式的日期、
+  一个门店名都找不到（有单元测试与浏览器测试双重断言）；
+- 保留「年-月」粒度是因为第 5 章的月度趋势与口味变化分组依赖月份，页面与文档都写明了这一点；
+- `report.md` / `report.html` / `profile.json` **始终是完整报告**，不受该参数影响 ——
+  公开版页面上与页脚都会提醒不要把这些文件一起发出去。
+
+### 前端与真实浏览器验收
+
+```bash
+# 1) jsdom 冒烟：真跑页面脚本，四条路径（增强 / 降级 / 恶意数据 / 公开版）
 npm install jsdom
-node scripts/smoke_story.js mcdtm-output/story.html
+node scripts/smoke_story.js mcdtm-output/story.html path/to/public-story.html
+
+# 2) 真实浏览器验收：375px 手机视口布局、六章滚动、长文本抗溢出、PNG 尺寸与元数据
+npm install playwright && npx playwright install chromium
+node scripts/browser_check.js mcdtm-output/story.html path/to/public-story.html --keep-png artifacts
 ```
 
 ---
@@ -211,8 +240,9 @@ mcd-time-machine/
 │   └── cli.py            # 命令行入口
 ├── scripts/
 │   ├── windows_wizard.py # Windows 一键联调向导
-│   └── smoke_story.js    # 故事页前端冒烟测试（增强 / 降级 / 恶意数据三路径，需 jsdom）
-├── tests/                # 150+ 条 unittest 用例，零第三方依赖
+│   ├── smoke_story.js    # 故事页前端冒烟（增强/降级/恶意数据/公开版四路径，需 jsdom）
+│   └── browser_check.js  # 真实浏览器验收（375px 布局 + PNG 导出，需 playwright）
+├── tests/                # 180+ 条 unittest 用例，零第三方依赖
 ├── docs/preview.html     # 示例年度报告（可直接在浏览器打开）
 ├── docs/preview-story.html  # 示例年度故事页（V2.0）
 ├── skill/SKILL.md        # WorkBuddy Skill 定义（对话式使用）
@@ -234,12 +264,18 @@ python -m unittest discover -s tests -v
 覆盖：空数据、缺金额/缺日期订单、重复订单去重、嵌套单品字段污染、
 分页终止与截断、边界日期、连续打卡、HTML 转义与结构闭合、示例数据确定性，
 以及故事页的六章结构、离线无外链、动效降级开关、隐私默认值与 JSON 转义。
-还包含分享预览的注入回归：恶意商品名 / 门店名 / 特殊字符 / 中文长文本，属性转义与变量遮蔽护栏。
+还包含：分享预览的注入回归（恶意商品名 / 门店名 / 特殊字符 / 中文长文本）、
+属性转义与变量遮蔽护栏、公开分享版的生成期脱敏、生成时间默认隐藏、卡片长文本宽度约束。
 
 `push` / `pull_request` 时 GitHub Actions 会在 Python 3.9 ~ 3.13 上自动跑编译检查、单元测试与 demo 冒烟，
-并额外起一个 `story` job：用 jsdom 加载 `story.html` 真跑一遍页面脚本
-（校验增强路径的渐显 / 章节导航 / 条形图，降级路径下内容仍完整可见，
-以及恶意数据路径下分享预览只按纯文本呈现、默认隐私字段不会进入卡片绘制）。
+并额外起两个前端 job：
+
+| job | 工具 | 覆盖 |
+| --- | --- | --- |
+| `story` | jsdom | 真跑页面脚本的四条路径：增强渐显 / 降级可读 / 恶意数据注入 / 公开分享版；断言预览只按纯文本呈现、四项隐私默认隐藏、绘制文字不越出 1080×1920 |
+| `browser` | Playwright + Chromium | 真实布局与真实 Canvas：375px 视口无横向溢出、36 个渐显元素逐个滚动验证、长文本抗溢出、隐私开关、导出 PNG 的尺寸与元数据块 |
+
+两个 job 都设了 `SMOKE_REQUIRE_*=1`：依赖装不上直接失败，**不允许冒烟静默跳过**。
 
 ---
 
@@ -265,15 +301,18 @@ python -m unittest discover -s tests -v
 - 仓库配置示例只含 `${MCD_MCP_TOKEN}` 占位符
 - `.gitignore` 已排除 `mcdtm-output/`、`.env` 等一切可能含敏感信息的文件
 - **请勿把 `mcdtm-output/raw/` 下的原始返回（含订单、门店等个人信息）提交到任何公开仓库或发给他人**
+- 分享场景分两档：页面上的「隐私浏览」只是**临时遮挡**；要真正脱敏请用
+  `mcdtm story --privacy public`，金额 / 门店名 / 到日日期在生成期就不会写进文件
 
 **6. 零依赖**
 只依赖 Python 标准库，`git clone` 下来就能跑。
+前端验收用的 jsdom / Playwright 仅用于测试，不影响运行期（也未被 import 进任何运行路径）。
 
 ---
 
 ## 已知限制
 
-- **真实 MCP 联调需本人完成**：本项目已通过 97 条单元测试与示例数据全链路验证，
+- **真实 MCP 联调需本人完成**：本项目已通过 182 条单元测试与示例数据全链路验证，
   但各账号的返回结构可能不同。首次使用请先运行 `mcdtm doctor`；
   若 `order-list` 解析异常，跑 `mcdtm share` 生成脱敏结构报告贴到 Issue，
   我会据此补进字段候选表（**不要贴 `doctor.json` 或 `raw/`，里面有真实数据**）。

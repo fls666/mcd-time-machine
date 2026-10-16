@@ -43,6 +43,10 @@ jobs:
           cp build/story.html public/story.html
           cp build/report.html public/report.html
           cp build/report.md public/report.md
+          # 再生成一份公开分享版，用于演示「敏感值在生成期即移除」的差别
+          python -m mcd_timemachine story --out build --privacy public
+          cp build/story.html public/story-public.html
+          python -m mcd_timemachine story --out build --privacy personal
 
       - name: 检测 Pages 是否可用
         id: pages-check

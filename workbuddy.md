@@ -52,6 +52,8 @@
 | 16 | 刷新示例预览，补齐回归测试 | `docs/preview.html`、`tests/`（87 条） |
 | 17 | **按第三轮源码审查修复 P0/P1/P2** | 见第七节 |
 | 18 | **按第四轮源码审查修复 P1/P2** | 见第八节 |
+| 19 | 第五轮审查后升级 V2.0 展示层（六章节故事页 + 分享卡片） | 分支 `feature/v2-story`，见第九节 |
+| 20 | **按第六轮源码审查修复 P1/P2，并完成浏览器视觉验收** | 见第十节 |
 
 ## 四、可复核的运行证据
 
@@ -63,7 +65,7 @@
 $ python -m unittest discover -s tests
 .......................................................................................
 ----------------------------------------------------------------------
-Ran 108 tests in 0.44s
+Ran 182 tests in 3.10s
 
 OK
 ```
@@ -77,6 +79,7 @@ OK
 | 分析 | 空数据、边界日期、连续打卡、口味变化区间划分、**实付/估算金额不混算**、无实付时回退估算、缺金额计数、未标注口径、**标签可信度 0–100 与排序**、不硬凑标签、数据量不足显示探索中、回忆文案命名 |
 | 报告 | HTML 转义与标签闭合、Demo 标识、覆盖范围与金额口径展示 |
 | 脱敏 | 值不回流、标点与分隔符不保留、手机号/邮箱/URL/身份证/长串凭证扫描、真实泄露场景端到端 |
+| 故事页 | 六章结构、离线无外链、动效降级、隐私默认值、JSON 转义、注入回归（恶意商品名 / 门店名 / 特殊字符 / 中文长文本）、属性转义、变量遮蔽护栏、**公开分享版生成期脱敏**、生成时间默认隐藏、卡片宽度约束 |
 
 ### 2. 示例数据全链路冒烟
 
@@ -106,7 +109,36 @@ $ python -m compileall -q mcd_timemachine scripts
 （无输出，退出码 0）
 ```
 
-### 4. 提交记录（与上文各步骤一一对应）
+### 4. 前端验收（故事页）
+
+需要 Node（测试专用依赖，运行期零依赖不受影响）：
+
+```
+# 4.1 jsdom 冒烟：真跑页面脚本，四条路径共 93 项断言
+$ npm install jsdom
+$ node scripts/smoke_story.js build/story.html build/public-story.html
+...
+全部通过
+
+# 4.2 真实浏览器验收：375×812 视口，35 项断言
+$ npm install playwright && npx playwright install chromium
+$ node scripts/browser_check.js build/story.html build/public-story.html --keep-png artifacts
+PASS  [375px] 页面滚动宽度未超出视口  -> scrollWidth=375 innerWidth=375
+PASS  [章节] 第 2 章 8 个渐显元素滚入后都完整显现
+...
+PASS  [导出] 尺寸 1080x1920  -> {"width":1080,"height":1920}
+PASS  [导出] PNG 不含元数据块
+全部通过
+```
+
+其中 `build/public-story.html` 由 `python -m mcd_timemachine story --out build --privacy public`
+先生成，再复制出来，用于比对公开分享版。
+
+`artifacts/` 下的 PNG 就是导出的实物；仓库里保留了两张作为证据：
+`docs/sample-share-card.png`（默认四项隐藏）与
+`docs/sample-share-card-longtext.png`（超长文本被截断）。
+
+### 5. 提交记录（与上文各步骤一一对应）
 
 | commit | 说明 |
 | --- | --- |
@@ -116,17 +148,22 @@ $ python -m compileall -q mcd_timemachine scripts
 | `cf906d5` | docs: workbuddy.md 补充可复核的运行证据与审查修复对照 |
 | `45270d5` | feat: 新增 Windows 联调教程、一键向导与脱敏导出 share 命令 |
 | `e149d61` | fix: 修 Pages 失败、加固脱敏、按 schema 分页、区分金额口径 |
+| `dfaa3ef` | fix: 小样本标签保护、可信度与支撑量、金额标题随口径、口味分组、推荐归一化 |
+| `b711142` | feat: V2.0 六章节沉浸式故事页 + 隐私友好竖版分享卡片 |
+| `850b12b` | fix: 分享预览改用 DOM 节点构建，堵住 HTML 注入并修掉连带遮蔽缺陷 |
 
-### 5. 产物清单
+### 6. 产物清单
 
 | 文件 | 内容 |
 | --- | --- |
 | `report.html` | 单文件 HTML 年度报告，顶部固定「数据说明」区块 |
 | `report.md` | Markdown 版报告，含数据说明与各统计表 |
+| `story.html` | V2.0 六章节沉浸式故事页（个人完整版 / 公开分享版由 `--privacy` 决定） |
 | `profile.json` | 完整分析结果（含 coverage 覆盖率字段） |
 | `provenance.json` | 数据来源与覆盖率元数据 |
 | `doctor.json` | 真实 MCP 诊断结果（**含真实数据，勿公开**） |
 | `share.json` | **脱敏**后的结构报告（公开前仍建议人工通读） |
+| `share-card.png` | 分享卡片导出（1080×1920，不含元数据；由第 6 章在浏览器里生成） |
 | `orders.normalized.json` | 归一化后的订单（含个人信息，已 gitignore） |
 | `raw/*.json` | 各 MCP Tool 的原始返回（含个人信息，已 gitignore） |
 
@@ -214,34 +251,67 @@ HTML 注入载荷与超长中文，断言预览区不产生任何可执行节点
 | 修复过程中引入的新缺陷：`initShare()` 里 `var el = $("f-…")` 因函数级提升**遮蔽**了 `el()` 助手，导致 `previewRow` 抛 `el is not a function`、分享面板整体失效（单元测试只做字符串断言，**未能发现**） | 循环变量改名 `box`（并加注释说明原因）；新增静态护栏测试禁止出现名为 `el` 的局部变量 / 参数 | `tests/test_story.py::TestNoShadowedHelper`；jsdom 冒烟从 10 项失败转为全通过 |
 | `_e()` 不转义单引号，而本模块片段统一用单引号包属性；`month` 取自订单日期前 7 个字符，属上游可控内容 | 新增 `_attr()`（`_e()` + `'` → `&#39;`），用于 `data-title` / `data-mask` / 月柱 `title` | `tests/test_story.py::TestAttributeEscaping`（含投毒 month 逃逸测试） |
 
-隐私默认值未改动：`PRIVACY_DEFAULTS = {"amount": False, "store": False, "date": False}`，
+隐私默认值未改动：这一阶段为 `PRIVACY_DEFAULTS = {"amount": False, "store": False, "date": False}`
+（三项均默认隐藏，见第十节：第六轮把「生成时间」补成第 4 项），
 并有测试固定住「未勾选即隐藏、且不进绘制文本与配置文本」这一行为。
 
-## 十、WorkBuddy 在项目中的实际作用
+## 十、第六轮审查修复：隐私边界、卡片排版与真实浏览器验收
+
+第六轮审查确认上一轮 P1 已修好，并提出三项待办：隐私模式需区分「完整报告」与「公开分享」、
+分享卡片长文本可能溢出、以及需要真实浏览器验收。逐条处理如下。
+
+| 优先级 | 审查意见 | 处理 | 证据 |
+| --- | --- | --- | --- |
+| P1 | 「隐私浏览」只是 CSS 遮挡，用户可能误以为原始数据已从文件中删除，建议区分两种模式 | 新增 `--privacy {personal,public}`：`public` 为**生成期脱敏**——金额 → 「金额已隐藏」、到日日期 → 「日期已隐藏」、门店名 → 「门店已隐藏」，脱敏作用于整份 HTML（含内联 JSON 数据块）；两模式各有顶部横幅说明这份文件里到底有什么；页脚在个人版明确写「请勿直接转发本文件」 | `tests/test_story.py::TestPublicMode`（14 条）、`TestsCliStory`、jsdom 冒烟 D 路径、浏览器验收公开版段落 |
+| P1 | 分享卡片长文本可能溢出：关键词只测换行没限宽，门店名等直接 `fillText` | 新增 `clip()` 单行截断（逐字回退 + 省略号）、`wrap(..., maxLines)` 末行省略号；关键词改为**先排版后绘制**，把块高算进下方字段面板位置，面板底部以 `FOOT_TOP` 为硬边界整体上移；字段值按「不与左侧标签重叠」计算可用宽度，再截断 | `TestCardLayoutGuards`（6 条）；jsdom 冒烟「所有绘制文字都在 1080×1920 画布内」；导出样本 `docs/sample-share-card-longtext.png` |
+| P2 | 生成时间可能暴露在分享图片中，建议提供隐藏选项 | 「生成时间」变为分享卡片第 4 个字段，**默认隐藏**、纳入隐私默认值与「复制卡片配置」；未勾选时页脚也不再出现具体时刻 | `TestGeneratedAtHidden`（4 条）、jsdom 冒烟新增 4 项生成时间断言 |
+| P2 | 建议增加 Playwright 浏览器测试（375px、长商品名、隐私模式、六章滚动、PNG 导出） | 新增 `scripts/browser_check.js`：Chromium 375×812 视口下检查横向溢出、逐元素滚动验证 36 个渐显元素、长文本抗溢出、隐私开关、以及导出 PNG 的签名 / 尺寸 / 元数据块；CI 新增 `browser` job 并上传导出样本 | 本机 35 项全通过；`docs/sample-share-card*.png` 即该脚本产出的实物 |
+
+两处自查出的坑（都会记进本节，避免下次重犯）：
+
+- 浏览器的横向溢出检查一开始把可达性「跳到正文」链接（刻意放在 `left:-9999px`）判成溢出，
+  改为忽略完全位于左边界外的元素，并以 `scrollWidth <= innerWidth` 作为页面级判据。
+- 「六章滚动」最初按章断言 `.reveal` 数量，实测出现 `视口内 0/8` 的**空转假通过**
+  （整屏章节居中滚动后没有任何 `.reveal` 中心进入视口）。改为逐个元素滚到视口正中后
+  等它拿到 `.is-visible` 且透明度收敛到 1，并补一条「加载时首屏外内容确实未显现」的防空转断言。
+
+本轮测试总量：单元测试 **182 条**（上一阶段 154 → +28，新增 `TestPublicMode` 14、
+`TestGeneratedAtHidden` 4、`TestCardLayoutGuards` 6、`TestCliStory` 4）、
+jsdom 冒烟 **93 项**（四条路径：增强 / 降级 / 恶意数据 / 公开版）、
+真实浏览器验收 **35 项**（Chromium 375×812）。CI 三个 job 全绿：`unittest`（Python 3.9–3.13）、
+`story`（jsdom）、`browser`（Playwright，上传 PNG artifact）。
+
+## 十一、WorkBuddy 在项目中的实际作用
 
 - **调研**：检索并归纳官方赛事规则与 29 个 MCP Tool 的能力边界，据此收敛选题
 - **架构设计**：分层设计（客户端 / 采集 / 分析 / 呈现 / 演示 / 可信度 / 排障）与容错策略
 - **编码实现**：全部源码由 WorkBuddy 在 Agent 模式下直接写入文件
 - **自测迭代**：运行 demo 与单元测试，根据输出反向修正品类规则、阈值与去重逻辑
-- **问题修复**：依据四轮静态审查报告逐条修复，并补充回归测试守住修复结果
+- **问题修复**：依据六轮静态审查报告逐条修复，并补充回归测试守住修复结果
 - **工程化**：Windows 教程、一键向导、脱敏排障、CI 与 Pages 工作流
 - **参赛材料与发布**：README、MCP 集成说明、Skill 定义、git 初始化与推送
 
-## 十一、证据边界（如实说明）
+## 十二、证据边界（如实说明）
 
 为免夸大，明确以下边界：
 
-1. **已完成**：示例数据全链路、154 条单元测试、CI 在 Python 3.9–3.13 上通过、编译检查通过、
-   故事页前端冒烟（jsdom，增强 / 降级 / 恶意数据三路径）通过。
+1. **已完成**：示例数据全链路、182 条单元测试、CI 在 Python 3.9–3.13 上通过、编译检查通过、
+   故事页前端冒烟（jsdom，增强 / 降级 / 恶意数据 / 公开版四路径，93 项）通过、
+   浏览器验收（Playwright + Chromium，375×812 视口，35 项）通过。
 2. **尚未完成**：**真实 MCP 联调需账号持有者本人执行**（WorkBuddy 没有用户的 Token，也不应索取）。
    在联调完成前，本项目不作「已通过真实环境验收」的表述。
    官方 `order-list` 描述为「查询**近期**订单」，服务端可能只返回有限条数，属接口范围而非本工具缺陷。
 3. **截图类证据**：WorkBuddy 无法自行截取会话界面。如需补充截图，可在本地按第四节的命令
    复现后自行截图附于 Issue，本文件的命令与产物可与之交叉验证。
-4. **V2.0 前端的真实设备验收尚未完成**：滚动动效、真机竖屏布局、PNG 导出与分享流程
-   目前只经过 jsdom 逻辑级冒烟（含降级路径），未在真实手机浏览器上人工走查；
-   审查者可用 `mcdtm demo` 生成 `story.html` 后自行在手机上验证。
-5. **本文件不含**任何真实 Token、密钥、订单号或个人敏感信息。
+4. **前端验收的准确范围**：已做到「真实浏览器内核」（Playwright 驱动 Chromium headless，
+   设备参数 375×812、DPR 3、`isMobile`/`hasTouch`），覆盖真实布局引擎与真实 Canvas 编码；
+   但**仍未在真机**（iOS Safari / Android Chrome）上人工走查，未覆盖真机滚动惯性、
+   地址栏收缩、字体回退差异等情况。审查者可用 `mcdtm demo` 生成 `story.html` 后自行在手机上验证。
+   仓库里的 `docs/sample-share-card*.png` 是 CI/本地 Chromium 的导出实物，不是设计稿。
+5. **脱敏模式的边界**：`--privacy public` 移除的是**结构化的**金额、门店名与到日日期；
+   「年-月」粒度被有意保留（第 5 章趋势图依赖它）。公开前仍建议自己通读一遍，
+   本工具不承诺「任何情况下都不可能泄露」。
+6. **本文件不含**任何真实 Token、密钥、订单号或个人敏感信息。
 
 ---
 

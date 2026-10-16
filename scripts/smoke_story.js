@@ -1,24 +1,27 @@
 /* 故事页（story.html）前端冒烟测试。
  *
- * 用 jsdom 真跑一遍页面脚本，覆盖三条路径：
+ * 用 jsdom 真跑一遍页面脚本，覆盖四条路径：
  *   A. 增强路径：注入 IntersectionObserver，验证渐显、章节圆点、条形图初始化；
  *   B. 降级路径：不注入，验证脚本失效时六章内容依然完整可读。
- *   C. 恶意数据路径：把商品名 / 门店名换成 HTML 注入载荷与超长中文，
- *      验证分享预览区只以纯文本呈现，不产生任何可执行节点。
- * 三条路径都会校验分享卡片的隐私默认值：未勾选的字段不得被画进图片。
+ *   C. 恶意数据路径：把商品名 / 门店名换成 HTML 注入载荷、带引号的属性逃逸载荷
+ *      与超长中文，验证分享预览只以纯文本呈现，且绘制文字不越出画布。
+ *   D. 公开分享版（可选第二个参数）：验证金额 / 门店 / 到日日期确实不在文件里。
+ * 各路径都会校验：隐私默认值（四项默认隐藏）、生成时间默认不入图、绘制文字在画布内。
  *
  * 本机运行（需要 jsdom）：
  *   npm install jsdom
- *   node scripts/smoke_story.js <story.html 路径>
+ *   node scripts/smoke_story.js <personal story.html> [public story.html]
  *
- * 无 jsdom 时脚本会以退出码 2 跳过，不会让 CI 变红。
+ * 无 jsdom 时脚本会以退出码 2 跳过；设置 SMOKE_REQUIRE_JSDOM=1（CI 用）则改为失败，
+ * 避免冒烟被静默跳过。
  */
 const fs = require('fs');
 const path = require('path');
 
 const file = process.argv[2];
+const publicFile = process.argv[3];
 if (!file) {
-  console.error('用法：node scripts/smoke_story.js <story.html 路径>');
+  console.error('用法：node scripts/smoke_story.js <story.html 路径> [公开版 story.html 路径]');
   process.exit(2);
 }
 
@@ -42,6 +45,8 @@ try {
 }
 
 const html = fs.readFileSync(file, 'utf8');
+const CARD_W = 1080;
+const CARD_H = 1920;
 
 let failures = 0;
 function check(name, cond, extra) {
@@ -50,23 +55,51 @@ function check(name, cond, extra) {
   console.log((ok ? 'PASS  ' : 'FAIL  ') + name + (extra ? '  -> ' + extra : ''));
 }
 
-function makeCtx(sink) {
+/* 近似字宽：CJK 按字号全宽、ASCII 按 0.55 字号。
+ * 比「每字符固定 18px」真实得多——否则长文本溢出的缺陷测不出来。 */
+const CJK_RE = /[\u1100-\u115F\u2E80-\u9FFF\uA960-\uA97F\uAC00-\uD7FF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/;
+function estimateWidth(s, size) {
+  let w = 0;
+  for (const ch of String(s)) w += CJK_RE.test(ch) ? size : size * 0.55;
+  return w;
+}
+
+function makeCtx(sink, boxes) {
+  const state = { textAlign: 'left', fontSize: 16 };
   return new Proxy({}, {
     get(_t, prop) {
-      if (prop === 'measureText') return (t) => ({ width: String(t).length * 18 });
+      if (prop === 'measureText') return (t) => ({ width: estimateWidth(t, state.fontSize) });
       if (prop === 'createLinearGradient') return () => ({ addColorStop() {} });
-      if (prop === 'canvas') return { width: 1080, height: 1920 };
-      // 记录真正被「画进图片」的文字，用于验证敏感字段是否真的没进图
-      if (prop === 'fillText') return (t) => { sink.push(String(t)); };
+      if (prop === 'canvas') return { width: CARD_W, height: CARD_H };
+      if (prop === 'textAlign') return state.textAlign;
+      // 记录真正被「画进图片」的文字，用于验证敏感字段是否真的没进图、是否越界
+      if (prop === 'fillText') return (t, x, y) => {
+        const text = String(t);
+        sink.push(text);
+        if (boxes) {
+          boxes.push({
+            t: text, x: x, y: y, w: estimateWidth(text, state.fontSize),
+            align: state.textAlign,
+          });
+        }
+      };
       return () => {};
     },
-    set() { return true; },
+    set(_t, prop, v) {
+      if (prop === 'textAlign') state.textAlign = v;
+      if (prop === 'font') {
+        const m = /(\d+(?:\.\d+)?)px/.exec(String(v));
+        if (m) state.fontSize = parseFloat(m[1]);
+      }
+      return true;
+    },
   });
 }
 
 function boot(withObserver, source) {
   const errors = [];
   const drawn = [];
+  const boxes = [];
   const dom = new JSDOM(source || html, {
     runScripts: 'dangerously',
     pretendToBeVisual: true,
@@ -86,7 +119,7 @@ function boot(withObserver, source) {
           this.disconnect = () => {};
         };
       }
-      window.HTMLCanvasElement.prototype.getContext = () => makeCtx(drawn);
+      window.HTMLCanvasElement.prototype.getContext = () => makeCtx(drawn, boxes);
       window.HTMLCanvasElement.prototype.toBlob = function (cb) { cb({ size: 999 }); };
       window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/png;base64,AAA';
       window.URL.createObjectURL = () => 'blob:fake';
@@ -95,30 +128,24 @@ function boot(withObserver, source) {
       window.addEventListener('error', (e) => errors.push('error: ' + e.message));
     },
   });
-  return { dom, errors, drawn };
+  return { dom, errors, drawn, boxes };
 }
 
-// ------------------------------------------------ C 恶意数据源（P1 注入回归）
-const EVIL_NAME = '<img src=x onerror=alert(1)>恶意商品';
-const EVIL_STORE = "麦当劳' onmouseover='alert(2)<b>注入</b>&\"门店";
-const LONG_CJK = '超长' + '芝士双层牛肉汉堡加培根加蛋'.repeat(12);
+const FIELD_LABELS = ['消费金额', '门店名称', '消费日期', '生成时间'];
 
-/* 把页面里的数据块整体换成恶意载荷，其余 HTML 保持原样：
- * 这样测的是真实渲染 + 真实脚本，而不是手工造的片段。 */
-function hostileSource() {
-  const m = html.match(/(<script id="story-data"[^>]*>)([\s\S]*?)(<\/script>)/);
-  if (!m) return null;
-  const payload = JSON.parse(m[2]);
-  payload.persona = EVIL_NAME;
-  payload.keywords = [EVIL_NAME, LONG_CJK, '薯条'];
-  payload.fields.store.value = EVIL_STORE;
-  payload.fields.amount.value = '¥1<script>alert(3)</script>';
-  payload.fields.date.value = "2026-06-27'";
-  const raw = JSON.stringify(payload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
-  return html.replace(m[0], m[1] + raw + m[3]);
+/* 绘制边界：所有文字必须落在 1080x1920 之内（右对齐要以 x 为右边界反推左边界） */
+function checkBounds(boxes, label) {
+  const outside = boxes.filter((b) => {
+    if (!b.t) return false;
+    const left = b.align === 'right' ? b.x - b.w : b.x;
+    const right = b.align === 'right' ? b.x : b.x + b.w;
+    return left < 0 || right > CARD_W || b.y < 0 || b.y > CARD_H;
+  });
+  check(`[${label}] 所有绘制文字都在 1080x1920 画布内`, outside.length === 0,
+    outside.slice(0, 3).map((b) => `${JSON.stringify(b.t)} x=${b.x} w=${Math.round(b.w)}`).join(' | '));
 }
 
-function commonChecks(doc, errors, drawn, label) {
+function commonChecks(doc, errors, drawn, boxes, label) {
   check(`[${label}] 脚本无运行时异常`, errors.length === 0, errors.join(' | '));
   for (let i = 1; i <= 6; i++) {
     check(`[${label}] 第 ${i} 章存在`, doc.getElementById('ch' + i));
@@ -137,35 +164,77 @@ function commonChecks(doc, errors, drawn, label) {
   const before = drawn.slice();
   const leaked = secrets.filter(
     (s) => s && s !== '已隐藏' && s !== '暂无金额数据' && s !== '暂无门店记录'
-      && before.some((t) => t.indexOf(s) >= 0));
+      && s !== '公开版未写入' && before.some((t) => t.indexOf(s) >= 0));
   check(`[${label}] 默认状态未把敏感值画进图片`, leaked.length === 0, leaked.join(' | '));
   check(`[${label}] 图片上显示「已隐藏」`, before.indexOf('已隐藏') >= 0);
 
   const configOut = doc.getElementById('configOut');
   const text = configOut ? configOut.textContent : '';
-  check(`[${label}] 默认三项均未开启`,
-    /"amount":false/.test(text) && /"store":false/.test(text) && /"date":false/.test(text));
+  check(`[${label}] 默认四项均未开启`,
+    /"amount":false/.test(text) && /"store":false/.test(text) &&
+    /"date":false/.test(text) && /"generated":false/.test(text));
   check(`[${label}] 默认金额/门店/日期显示为已隐藏`,
     /消费金额：已隐藏/.test(text) && /门店名称：已隐藏/.test(text) && /消费日期：已隐藏/.test(text));
 
-  doc.getElementById('f-amount').click();
-  doc.getElementById('f-store').click();
-  doc.getElementById('f-date').click();
-  const on = doc.getElementById('configOut').textContent;
-  check(`[${label}] 勾选后三项均开启`,
-    /"amount":true/.test(on) && /"store":true/.test(on) && /"date":true/.test(on));
-  check(`[${label}] 勾选后不再显示已隐藏`, !/消费日期：已隐藏/.test(on),
-    (/消费日期：(.+)/.exec(on) || [, ''])[1]);
-  const after = drawn.slice(before.length);
-  check(`[${label}] 勾选后敏感值才进入图片`,
-    after.some((t) => t.indexOf(payload.fields.date.value) >= 0), payload.fields.date.value);
+  // ---- 生成时间默认不入图
+  check(`[${label}] 默认不出现生成时间`,
+    !before.some((t) => t.indexOf('生成于') >= 0),
+    before.filter((t) => t.indexOf('生成于') >= 0).join(' | '));
 
+  // 只勾选前三项：生成时间应仍然不出现在图片里
+  const sws = doc.querySelectorAll('.sw input');
+  if (sws.length < 4 || !sws[0].disabled) {
+    doc.getElementById('f-amount').click();
+    doc.getElementById('f-store').click();
+    doc.getElementById('f-date').click();
+    const on = doc.getElementById('configOut').textContent;
+    check(`[${label}] 勾选后前三项开启、生成时间仍关闭`,
+      /"amount":true/.test(on) && /"store":true/.test(on) &&
+      /"date":true/.test(on) && /"generated":false/.test(on));
+    const after = drawn.slice(before.length);
+    check(`[${label}] 勾选后敏感值才进入图片`,
+      after.some((t) => t.indexOf(payload.fields.date.value.replace(/…$/, '')) >= 0),
+      payload.fields.date.value);
+    check(`[${label}] 前三项勾选后仍无生成时间`,
+      !after.some((t) => t.indexOf('生成于') >= 0));
+
+    const genBox = doc.getElementById('f-generated');
+    if (genBox) {
+      genBox.click();
+      const genDrawn = drawn.slice(before.length + after.length);
+      check(`[${label}] 勾选生成时间后图片上才出现`,
+        genDrawn.some((t) => t.indexOf('生成于') >= 0));
+    }
+  }
+
+  checkBounds(boxes, label);
   doc.getElementById('downloadCard').click();
   doc.getElementById('copyConfig').click();
   check(`[${label}] 导出/复制按钮无异常`, errors.length === 0, errors.join(' | '));
 }
 
-// ---------------------------------------------------------------- A 增强路径
+// ---------------------------------------------------------- C 恶意数据源（P1）
+const EVIL_NAME = '<img src=x onerror=alert(1)>' + '超长恶意商品名'.repeat(6);
+const EVIL_STORE = "麦当劳' onmouseover='alert(2)<b>注入</b>&\"门店" + '分店'.repeat(30);
+const LONG_CJK = '超长' + '芝士双层牛肉汉堡加培根加蛋'.repeat(12);
+
+/* 把页面里的数据块整体换成恶意载荷，其余 HTML 保持原样：
+ * 这样测的是真实渲染 + 真实脚本，而不是手工造的片段。 */
+function hostileSource() {
+  const m = html.match(/(<script id="story-data"[^>]*>)([\s\S]*?)(<\/script>)/);
+  if (!m) return null;
+  const payload = JSON.parse(m[2]);
+  payload.persona = EVIL_NAME;
+  payload.keywords = [EVIL_NAME, LONG_CJK, '薯条'];
+  payload.persona_desc = LONG_CJK;
+  payload.fields.store.value = EVIL_STORE;
+  payload.fields.amount.value = '¥1<script>alert(3)</script>';
+  payload.fields.date.value = "2026-06-27'";
+  const raw = JSON.stringify(payload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  return html.replace(m[0], m[1] + raw + m[3]);
+}
+
+// -------------------------------------------------------------- A 增强路径
 const enhanced = boot(true);
 setTimeout(() => {
   const doc = enhanced.dom.window.document;
@@ -176,9 +245,13 @@ setTimeout(() => {
   check('[增强] 渐显元素被标记为可见', doc.querySelectorAll('.reveal.is-visible').length > 0,
     doc.querySelectorAll('.reveal.is-visible').length + ' 个');
   const filled = Array.prototype.filter.call(
-    doc.querySelectorAll('.fill[data-w]'), (el) => el.style.width);
+    doc.querySelectorAll('.fill[data-w]'), (node) => node.style.width);
   check('[增强] 条形图已按 data-w 设宽', filled.length > 0, filled.length + ' 个');
-  commonChecks(doc, enhanced.errors, enhanced.drawn, '增强');
+  const sw = doc.querySelectorAll('.sw input');
+  check('[增强] 分享面板有 4 个字段开关', sw.length === 4, '实际 ' + sw.length);
+  check('[增强] 默认四项都未勾选', Array.prototype.every.call(sw, (b) => !b.checked));
+  check('[增强] 顶部有个人完整版提示横幅', !!doc.querySelector('.mode-banner.personal'));
+  commonChecks(doc, enhanced.errors, enhanced.drawn, enhanced.boxes, '增强');
   enhanced.dom.window.close();
 
   // -------------------------------------------------------------- B 降级路径
@@ -192,7 +265,7 @@ setTimeout(() => {
       shown.length + '/' + all.length);
     const circles = doc2.querySelectorAll('#dots a');
     check('[降级] 导航圆点仍可用（不影响阅读）', circles.length === 6, '实际 ' + circles.length);
-    commonChecks(doc2, degraded.errors, degraded.drawn, '降级');
+    commonChecks(doc2, degraded.errors, degraded.drawn, degraded.boxes, '降级');
     degraded.dom.window.close();
 
     // ------------------------------------------------- C 恶意数据路径（P1）
@@ -205,8 +278,8 @@ setTimeout(() => {
     const hostile = boot(false, evilHtml);
     setTimeout(() => {
       const doc3 = hostile.dom.window.document;
-      // 先把三项隐私开关打开，让恶意值真正进入预览与配置文本
-      commonChecks(doc3, hostile.errors, hostile.drawn, '恶意');
+      // 先把开关打开，让恶意值真正进入预览与配置文本
+      commonChecks(doc3, hostile.errors, hostile.drawn, hostile.boxes, '恶意');
 
       const list = doc3.getElementById('fieldPreview');
       const cfg = doc3.getElementById('configOut');
@@ -215,23 +288,18 @@ setTimeout(() => {
         injected.length + ' 个：' + Array.prototype.map.call(injected, (n) => n.tagName).join(','));
       check('[恶意] 预览里没有可执行事件属性',
         doc3.querySelectorAll('[onerror],[onmouseover],[onload],[onclick]').length === 0);
-      check('[恶意] 恶意商品名以纯文本呈现',
-        list.textContent.indexOf(EVIL_NAME) >= 0);
-      check('[恶意] 恶意门店名以纯文本呈现',
-        list.textContent.indexOf(EVIL_STORE) >= 0);
+      check('[恶意] 恶意商品名以纯文本呈现', list.textContent.indexOf(EVIL_NAME) >= 0);
+      check('[恶意] 恶意门店名以纯文本呈现', list.textContent.indexOf(EVIL_STORE) >= 0);
       check('[恶意] 预览 HTML 里只有转义形态，没有真正的标签',
         list.innerHTML.indexOf('&lt;img') >= 0 && list.innerHTML.indexOf('<img') === -1,
         list.innerHTML.slice(0, 120));
-      check('[恶意] 超长中文关键词完整保留',
+      check('[恶意] 超长中文关键词完整保留在预览与配置里',
         list.textContent.indexOf(LONG_CJK) >= 0 && cfg.textContent.indexOf(LONG_CJK) >= 0);
 
-      const labels = Array.prototype.map.call(list.querySelectorAll('b'),
-        (b) => b.textContent);
-      const allowed = ['麦麦时光机 · 我的年度回忆', '我的口味人格', '年度关键词',
-        '消费金额', '门店名称', '消费日期'];
+      const labels = Array.prototype.map.call(list.querySelectorAll('b'), (b) => b.textContent);
+      const allowed = ['麦麦时光机 · 我的年度回忆', '我的口味人格', '年度关键词'].concat(FIELD_LABELS);
       check('[恶意] 预览的标签仍全是固定文案，未被数据污染',
-        labels.length > 0 && labels.every((t) => allowed.indexOf(t) >= 0),
-        labels.join(' / '));
+        labels.length > 0 && labels.every((t) => allowed.indexOf(t) >= 0), labels.join(' / '));
       check('[恶意] 预览行数与字段数一致，没有多出节点',
         list.querySelectorAll('li').length === 3 + doc3.querySelectorAll('.sw input').length,
         list.querySelectorAll('li').length + ' 行');
@@ -242,12 +310,58 @@ setTimeout(() => {
       check('[恶意] 文档脚本节点数未增加',
         doc3.querySelectorAll('script').length === 2,
         doc3.querySelectorAll('script').length + ' 个');
-      check('[恶意] 画布上的恶意字段按原文当文字绘制（未被截断或改写）',
-        hostile.drawn.join('\n').indexOf(EVIL_STORE) >= 0);
+
+      // 长文本必须被截断成「内容前缀 + 省略号」：既不溢出，也不悄悄丢内容
+      const clipped = hostile.drawn.filter((t) => t.length > 1 && t.slice(-1) === '…');
+      check('[恶意] 超长文本被截断并带省略号（而非溢出）', clipped.length > 0,
+        clipped.slice(0, 2).join(' | '));
+      const storeDrawn = hostile.drawn.filter(
+        (t) => t.length > 4 && EVIL_STORE.indexOf(t.replace(/…$/, '')) === 0);
+      check('[恶意] 门店名以内容前缀形式绘制，未被替换成别的内容',
+        storeDrawn.length > 0, storeDrawn.slice(0, 2).join(' | '));
+
+      checkBounds(hostile.boxes, '恶意');
       hostile.dom.window.close();
 
-      console.log(failures === 0 ? '\n全部通过' : `\n${failures} 项失败`);
-      process.exit(failures === 0 ? 0 : 1);
+      // ------------------------------------------------ D 公开分享版（P1）
+      if (!publicFile) {
+        check('[公开版] 已提供公开版页面用于比对', false,
+          '缺少第二个参数：node scripts/smoke_story.js <personal> <public>');
+        console.log(`\n${failures} 项失败`);
+        process.exit(1);
+      }
+      const pubHtml = fs.readFileSync(publicFile, 'utf8');
+      const pub = boot(false, pubHtml);
+      setTimeout(() => {
+        const doc4 = pub.dom.window.document;
+        const payload4 = JSON.parse(doc4.getElementById('story-data').textContent);
+        check('[公开版] 标记为公开模式',
+          payload4.redacted === true && payload4.privacy_mode === 'public');
+        check('[公开版] html 标记为 data-privacy=public',
+          doc4.documentElement.getAttribute('data-privacy') === 'public');
+        check('[公开版] 正文里没有金额符号 ¥', pubHtml.indexOf('¥') === -1,
+          (pubHtml.match(/¥[\d,.]*/g) || []).slice(0, 3).join(' '));
+        check('[公开版] 正文里没有到日日期', !/\d{4}-\d{2}-\d{2}/.test(pubHtml),
+          (pubHtml.match(/\d{4}-\d{2}-\d{2}/g) || []).slice(0, 3).join(' '));
+        check('[公开版] 内联数据里没有原值',
+          payload4.fields.amount.value === '公开版未写入' &&
+          payload4.fields.store.value === '公开版未写入' &&
+          payload4.generated_at === '');
+        const sws = doc4.querySelectorAll('.sw input');
+        check('[公开版] 四个字段开关全部置灰',
+          sws.length === 4 && Array.prototype.every.call(sws, (b) => b.disabled));
+        check('[公开版] 页面顶部有公开版说明横幅', !!doc4.querySelector('.mode-banner.public'));
+        check('[公开版] 预览显示占位说明，而不是原值',
+          doc4.getElementById('fieldPreview').textContent.indexOf('公开版未写入') >= 0);
+        check('[公开版] 不含指向完整报告的链接',
+          doc4.querySelectorAll("a[href='report.html']").length === 0);
+        check('[公开版] 脚本无运行时异常', pub.errors.length === 0, pub.errors.join(' | '));
+        checkBounds(pub.boxes, '公开版');
+        pub.dom.window.close();
+
+        console.log(failures === 0 ? '\n全部通过' : `\n${failures} 项失败`);
+        process.exit(failures === 0 ? 0 : 1);
+      }, 400);
     }, 400);
   }, 400);
 }, 400);

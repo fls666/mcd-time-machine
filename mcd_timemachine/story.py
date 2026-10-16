@@ -37,10 +37,26 @@ from .reporter import (
 CARD_WIDTH = 1080
 CARD_HEIGHT = 1920
 
-# 分享卡片字段：默认全部隐藏，由用户在页面上主动勾选
-PRIVACY_DEFAULTS = {"amount": False, "store": False, "date": False}
+# 生成模式
+# - personal：个人完整报告，保留全部数据，页面上另有「隐私浏览」开关做临时遮挡
+# - public  ：公开分享版，金额 / 门店名 / 到日日期在**生成阶段**就不写入 HTML
+#             （不是靠 CSS 遮挡，文件里根本没有这些值）
+PRIVACY_MODES = ("personal", "public")
+_PUBLIC_PLACEHOLDER = "公开版未写入"
+_REDACT_MONEY = "金额已隐藏"
+_REDACT_DAY = "日期已隐藏"
+_REDACT_STORE = "门店已隐藏"
 
-_FIELD_LABELS = {"amount": "消费金额", "store": "门店名称", "date": "消费日期"}
+# 分享卡片字段：默认全部隐藏，由用户在页面上主动勾选
+PRIVACY_DEFAULTS = {"amount": False, "store": False, "date": False, "generated": False}
+
+_FIELD_ORDER = ("amount", "store", "date", "generated")
+_FIELD_LABELS = {
+    "amount": "消费金额",
+    "store": "门店名称",
+    "date": "消费日期",
+    "generated": "生成时间",
+}
 _HIDDEN_TEXT = "已隐藏"
 
 CHAPTER_TITLES = [
@@ -104,29 +120,45 @@ def _top_store(profile: Dict[str, Any]) -> str:
     return ""
 
 
-def build_story_payload(profile: Dict[str, Any]) -> Dict[str, Any]:
+def build_story_payload(profile: Dict[str, Any], privacy: str = "personal") -> Dict[str, Any]:
     """故事页与分享卡片共用的最小数据集。
 
     只放展示必需字段；金额 / 门店 / 日期是否出现，取决于用户在页面上的勾选。
+
+    `privacy="public"` 时（公开分享版）三项敏感字段的值在**生成期**就被替换成占位符，
+    并标记 `available=False`：文件里根本没有原值，页面上的勾选框也会置灰。
     """
+    public = privacy == "public"
     cov = profile.get("coverage") or {}
     summary = profile.get("summary") or {}
     tags = profile.get("tags") or []
     keywords = [k.get("word", "") for k in (profile.get("keywords") or []) if k.get("word")]
     range_text = f"{cov.get('range_start') or '—'} ~ {cov.get('range_end') or '—'}"
     store_text = _top_store(profile)
+    generated_at = profile.get("generated_at", "")
 
     amount_value = f"{_spend_title(summary)} ¥{(summary.get('display_spend') or 0):,.2f}"
     if summary.get("spend_basis", "none") == "none":
         amount_value = "暂无金额数据"
 
-    fields: Dict[str, Dict[str, str]] = {
-        "amount": {"label": _FIELD_LABELS["amount"], "value": amount_value,
-                   "hidden_text": _HIDDEN_TEXT},
-        "store": {"label": _FIELD_LABELS["store"],
-                  "value": store_text or "暂无门店记录", "hidden_text": _HIDDEN_TEXT},
-        "date": {"label": _FIELD_LABELS["date"], "value": range_text,
-                 "hidden_text": _HIDDEN_TEXT},
+    raw_values = {
+        "amount": amount_value,
+        "store": store_text or "暂无门店记录",
+        "date": range_text,
+        "generated": generated_at or "—",
+    }
+    if public:
+        # 公开版：值不进文件，也不进卡片
+        raw_values = {k: _PUBLIC_PLACEHOLDER for k in raw_values}
+
+    fields: Dict[str, Dict[str, Any]] = {
+        key: {
+            "label": _FIELD_LABELS[key],
+            "value": raw_values[key],
+            "hidden_text": _HIDDEN_TEXT,
+            "available": not public,
+        }
+        for key in _FIELD_ORDER
     }
 
     return {
@@ -137,8 +169,10 @@ def build_story_payload(profile: Dict[str, Any]) -> Dict[str, Any]:
         "keywords": keywords[:3],
         "source_label": SOURCE_LABEL.get(cov.get("source", "unknown"), "来源未知"),
         "is_demo": cov.get("source") == "demo",
-        "range_text": range_text,
-        "generated_at": profile.get("generated_at", ""),
+        "privacy_mode": privacy,
+        "redacted": public,
+        "range_text": _PUBLIC_PLACEHOLDER if public else range_text,
+        "generated_at": "" if public else generated_at,
         # 默认一律隐藏，用户勾选后才写入卡片
         "privacy": dict(PRIVACY_DEFAULTS),
         "fields": fields,
@@ -167,6 +201,32 @@ def _mask_text(text: Any, extra: str = "") -> str:
         out = out.replace(_e(extra), _pv(extra), 1)
     out = _PV_MONEY_RE.sub(lambda m: _pv(m.group(0)), out)
     out = _PV_DATE_RE.sub(lambda m: _pv(m.group(0)), out)
+    return out
+
+
+# ---------------------------------------------------------------- 生成期脱敏
+
+_PV_DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def store_names(profile: Dict[str, Any]) -> List[str]:
+    return [s.get("name") for s in (profile.get("stores") or []) if s.get("name")]
+
+
+def redact_html(html: str, names: Optional[List[str]] = None) -> str:
+    """公开分享版：把敏感值从 HTML 里**真正抹掉**，而不是靠 CSS 遮挡。
+
+    - 金额：`¥1,234.00` → 「金额已隐藏」
+    - 到日日期：`2026-06-27` → 「日期已隐藏」；保留 `2026-06` 月粒度，
+      否则第 5 章的月度趋势与口味变化分组依据会失去意义（页面会写明这一点）
+    - 门店名：按 profile 中的门店名逐个替换为「门店已隐藏」（保留次数与家数）
+
+    同时对整份 HTML（含内联 JSON 数据块）生效，避免漏改某个字段。
+    """
+    out = _PV_MONEY_RE.sub(_REDACT_MONEY, html)
+    out = _PV_DAY_RE.sub(_REDACT_DAY, out)
+    for name in sorted((n for n in (names or []) if n), key=len, reverse=True):
+        out = out.replace(_e(name), _REDACT_STORE).replace(name, _REDACT_STORE)
     return out
 
 
@@ -476,22 +536,41 @@ def _chapter_finale(profile: Dict[str, Any], payload: Dict[str, Any]) -> str:
 
 def _share_panel(payload: Dict[str, Any]) -> str:
     fields = payload.get("fields", {})
+    public = bool(payload.get("redacted"))
     switches = []
-    for key in ("amount", "store", "date"):
+    for key in _FIELD_ORDER:
         field = fields.get(key)
         if not field:
             continue
         checked = " checked" if payload.get("privacy", {}).get(key) else ""
+        # 公开版里这些值压根没写进文件，勾选也没有意义，直接置灰
+        disabled = " disabled" if field.get("available") is False else ""
+        note = "公开版未写入" if field.get("available") is False else "默认隐藏"
         switches.append(
-            f"<label class='sw'><input type='checkbox' id='f-{key}'{checked}>"
-            f"<span>展示{_e(field.get('label'))}</span><em>默认隐藏</em></label>"
+            f"<label class='sw'><input type='checkbox' id='f-{key}'{checked}{disabled}>"
+            f"<span>展示{_e(field.get('label'))}</span><em>{_e(note)}</em></label>"
         )
+
+    intro = (
+        "竖版 1080×1920，适配常见手机屏幕。"
+        "下面四项默认关闭；未勾选的字段不会画进图片，也不会写进配置。"
+    )
+    warn = (
+        "卡片由本机 Canvas 绘制并导出，不含位置、账号等元数据；"
+        "但画面上的文字就是图片的全部内容，公开前仍请自己看一眼。"
+        "另外：story.html 本身包含完整数据，分享请发 PNG，不要直接转发这个 HTML 文件。"
+    )
+    if public:
+        intro = ("竖版 1080×1920，适配常见手机屏幕。本页已是<b>公开分享版</b>："
+                 "金额、门店名、到日日期在生成时就没有写入文件，因此这四项无可展示内容。")
+        warn = ("卡片由本机 Canvas 绘制并导出，不含位置、账号等元数据。"
+                "本页可直接分享；同目录的 report.html / report.md / profile.json "
+                "仍含完整数据，不要一并发出。")
 
     return (
         "<div class='share-panel reveal'>"
-        "<h3 style='font-size:15px;margin-bottom:4px'>生成分享卡片</h3>"
-        "<p class='muted' style='margin-top:0'>竖版 1080×1920，适配常见手机屏幕。"
-        "下面三项默认关闭；未勾选的字段不会画进图片，也不会写进配置。</p>"
+        f"<h3 style='font-size:15px;margin-bottom:4px'>生成分享卡片</h3>"
+        f"<p class='muted' style='margin-top:0'>{intro}</p>"
         f"<div class='switches'>{''.join(switches)}</div>"
         "<div class='card-preview'><canvas id='cardCanvas' width='1080' height='1920' "
         "aria-label='分享卡片预览'>当前浏览器不支持 Canvas，无法预览与导出分享卡片。</canvas></div>"
@@ -501,9 +580,7 @@ def _share_panel(payload: Dict[str, Any]) -> str:
         "<button type='button' id='copyConfig' class='ghost'>复制卡片配置</button>"
         "</div>"
         "<pre class='muted' id='configOut' style='white-space:pre-wrap;margin-top:12px'></pre>"
-        "<div class='warn'>卡片由本机 Canvas 绘制并导出，不含位置、账号等元数据；"
-        "但画面上的文字就是图片的全部内容，公开前仍请自己看一眼。"
-        "另外：story.html 本身包含完整数据，分享请发 PNG，不要直接转发这个 HTML 文件。</div>"
+        f"<div class='warn'>{warn}</div>"
         "</div>"
     )
 
@@ -522,39 +599,77 @@ def _empty_chapters(profile: Dict[str, Any]) -> str:
 
 # ---------------------------------------------------------------- 组装
 
-def _body_of(profile: Dict[str, Any], payload: Dict[str, Any]) -> str:
+def _body_of(profile: Dict[str, Any], payload: Dict[str, Any], privacy: str) -> str:
     if profile.get("empty"):
-        return _chapter_hero(profile) + _empty_chapters(profile) + _footer(profile)
+        return (_banner(profile, privacy) + _chapter_hero(profile)
+                + _empty_chapters(profile) + _footer(profile, privacy))
     return (
-        _chapter_hero(profile)
+        _banner(profile, privacy)
+        + _chapter_hero(profile)
         + _chapter_origin(profile)
         + _chapter_daily(profile)
         + _chapter_persona(profile)
         + _chapter_shift(profile)
         + _chapter_finale(profile, payload)
-        + _footer(profile)
+        + _footer(profile, privacy)
     )
 
 
-def _footer(profile: Dict[str, Any]) -> str:
+def _banner(profile: Dict[str, Any], privacy: str) -> str:
+    """页面顶部的模式横幅：把「这份文件里到底有什么」讲清楚。"""
+    if privacy == "public":
+        return (
+            "<div class='mode-banner public' role='note'>"
+            "<b>公开分享版</b> 金额、门店名称、到日日期已在生成时从本文件移除"
+            "（保留月粒度用于趋势图）。本页可直接分享，但同目录的 "
+            "report.html / report.md / profile.json 仍含完整数据，请勿一并发出。"
+            "</div>"
+        )
+    return (
+        "<div class='mode-banner personal' role='note'>"
+        "<b>个人完整版</b> 本文件包含你的原始数据：累计金额、门店名称、具体日期都在里面；"
+        "页面左下角「隐私浏览」开关只是<b>临时遮挡</b>，不会从文件里删掉任何内容，"
+        "请勿直接转发本文件。要对外分享，请用 "
+        "<code>mcdtm story --privacy public</code> 另生成一份公开版，"
+        "或只发第 6 章导出的 share-card.png。"
+        "</div>"
+    )
+
+
+def _footer(profile: Dict[str, Any], privacy: str = "personal") -> str:
     cov = profile.get("coverage") or {}
     demo = cov.get("source") == "demo"
-    note = ("本页订单由程序生成，不来自任何真实账号。" if demo else
-            "本页数据来自你本机通过麦当劳 MCP 拉取的订单，未上传至任何服务器。")
+    if privacy == "public":
+        note = ("本页为公开分享版，已移除金额、门店名称与到日日期；"
+                "月度趋势保留到「年-月」粒度。" if not demo else
+                "本页订单由程序生成，不来自任何真实账号；且已按公开分享版移除敏感字段。")
+        link = "<p>对外分享请直接发送本文件或第 6 章导出的 share-card.png。</p>"
+    else:
+        note = ("本页数据来自你本机通过麦当劳 MCP 拉取的订单，未上传至任何服务器；"
+                "但本文件本身包含完整原始数据。" if not demo else
+                "本页订单由程序生成，不来自任何真实账号。")
+        link = ("<p>麦麦时光机是麦当劳程序员创意开发大赛参赛作品，由参赛者独立开发，非麦当劳官方产品。"
+                "　<a href='report.html'>查看完整数据报告</a>"
+                "　<a href='story-public.html'>公开分享版长什么样</a></p>")
     return (
         "<footer class='foot'>"
         f"<p>{_e(note)}</p>"
         "<p>统计范围与缺失情况见第 6 章「数据说明」；餐品信息、价格与营养数据"
         "以麦当劳官方渠道实时结果为准，本工具不构成营养或医疗建议。</p>"
-        "<p>麦麦时光机是麦当劳程序员创意开发大赛参赛作品，由参赛者独立开发，非麦当劳官方产品。"
-        "　<a href='report.html'>查看完整数据报告</a></p>"
+        + link +
         "</footer>"
     )
 
 
-def render_story(profile: Dict[str, Any]) -> str:
-    """把 profile 渲染成单文件、离线可打开的故事页 HTML。"""
-    payload = build_story_payload(profile)
+def render_story(profile: Dict[str, Any], privacy: str = "personal") -> str:
+    """把 profile 渲染成单文件、离线可打开的故事页 HTML。
+
+    `privacy="public"` 时在**生成阶段**就把金额 / 门店名 / 到日日期从 HTML 里抹掉，
+    产出的文件本身不含这些值（不是 CSS 遮挡）。
+    """
+    if privacy not in PRIVACY_MODES:
+        raise ValueError(f"privacy 只能是 {PRIVACY_MODES}，收到 {privacy!r}")
+    payload = build_story_payload(profile, privacy)
     cov = profile.get("coverage") or {}
     title = "麦麦时光机 · 我的年度回忆"
     desc = (
@@ -568,20 +683,26 @@ def render_story(profile: Dict[str, Any]) -> str:
         .replace("__STORY_VERSION__", _e(__version__))
         .replace("__STORY_TITLE__", _e(title))
         .replace("__STORY_DESC__", _e(desc))
+        .replace("__STORY_PRIVACY__", _attr(privacy))
         .replace("__STORY_CSS__", _asset("story.css"))
-        .replace("__STORY_BODY__", _body_of(profile, payload))
+        .replace("__STORY_BODY__", _body_of(profile, payload, privacy))
         .replace("__STORY_DATA__", _json_for_html(payload))
         .replace("__STORY_JS__", _asset("story.js"))
     )
+    if privacy == "public":
+        # 连同内联 JSON 一起兜底一遍，防止将来新增字段时漏改
+        html = redact_html(html, store_names(profile))
     return html
 
 
-def write_story(profile: Dict[str, Any], out_dir: Path) -> Path:
+def write_story(profile: Dict[str, Any], out_dir: Path,
+                privacy: str = "personal") -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = Path(out_dir) / "story.html"
-    path.write_text(render_story(profile), encoding="utf-8")
+    path.write_text(render_story(profile, privacy), encoding="utf-8")
     return path
 
 
-__all__ = ["render_story", "write_story", "build_story_payload",
-           "CARD_WIDTH", "CARD_HEIGHT", "PRIVACY_DEFAULTS"]
+__all__ = ["render_story", "write_story", "build_story_payload", "redact_html",
+           "store_names", "CARD_WIDTH", "CARD_HEIGHT", "PRIVACY_DEFAULTS",
+           "PRIVACY_MODES"]

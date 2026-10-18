@@ -11,14 +11,28 @@ WebKit 390×844 对标 iPhone Safari），字体回退与 Canvas 编码的差异
 
 ## 一、先把页面放到手机上（三种方式，挑一种）
 
-**A. 直接传文件（最省事，不需要电脑开着）**
+**A. 直接开线上 Pages（最推荐，零准备）**
+
+V2.0 已合并进 `main`，Pages 已自动发布，手机浏览器直接打开即可：
+
+```
+https://fls666.github.io/mcd-time-machine/                    # 首页＝个人完整版故事页
+https://fls666.github.io/mcd-time-machine/story-public.html   # 公开分享版（无金额/门店/到日日期）
+https://fls666.github.io/mcd-time-machine/report.html         # 完整报告
+```
+
+这条最接近评委与朋友真实打开的场景：走的是 HTTPS 与真实域名，
+`<a download>`、剪贴板、滚动惯性等行为都与最终形态一致。
+导出 PNG 时若 Safari 打开新标签而不是直接下载，长按图片保存即可（这正是需要真机确认的差异之一）。
+
+**B. 直接传文件（不需要联网，也不需要电脑开着）**
 
 把 `docs/preview-story.html` 通过微信文件传输助手 / AirDrop / 网盘发到手机，
 用 Safari 或 Chrome 打开即可。单文件内联了 CSS / JS / 数据，**断网也能看**。
 
-**B. 局域网静态服务（推荐，能顺便测「导出 PNG」的真实下载行为）**
+**C. 局域网静态服务（想连本地改动后的版本时用）**
 
-`file://` 协议在 iOS 上限制较多，想验证导出与剪贴板就用这种方式：
+`file://` 协议在 iOS 上限制较多，想验证导出与剪贴板、又不方便合并时用这种方式：
 
 ```bash
 # 1) 查本机局域网 IP
@@ -38,8 +52,6 @@ http://<电脑局域网IP>:8123/docs/preview-story-public.html
 
 注意：这会把 `docs/` 目录临时暴露在同一局域网内。该目录只有示例数据生成的成品，
 没有真实订单（真实数据在 `mcdtm-output/`，不在 `docs/`）；用完 `Ctrl+C` 停掉即可。
-
-**C. 合并进 `main` 后用 GitHub Pages**：最接近评委看到的形态，但需要先合并 PR。
 
 ## 二、逐项走查（打勾用）
 

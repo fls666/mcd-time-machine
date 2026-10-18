@@ -195,6 +195,8 @@ WebKit 的 PNG 体积明显小于 Chromium（1080×1920 同尺寸下约 169KB vs
 | `3c52a21` | fix: 公开版改为 fail-closed（检出残留即拒绝输出）、新增内容完整性检查与双引擎浏览器验收 |
 | `811af2f` | ci: 浏览器验收失败时输出 GitHub Actions 注解（含引擎版本与失败明细） |
 | `17db663` | fix: `demo` 新增 `--as-of` 固定基准日期，消除 CI 版面断言与文档预览的日期漂移 |
+| `100c990` | Merge pull request #1：V2.0 合并进 `main`（merge commit，保留 16 个提交的完整演进） |
+| `357c5e3` | fix(ci): 渐显断言改为瞬时滚动 + 只等真正的显现条件，消除 WebKit 假失败 |
 
 ### 6. 产物清单
 
@@ -428,6 +430,42 @@ CI 三个 job 全绿：`unittest`（Python 3.9–3.13）、`story`（jsdom）、
    > 已确认的是：加上注解机制后重跑全绿，且日期漂移确实是版面断言里唯一的不确定输入，
    > 现在它被固定了。若再次出现，注解会直接给出失败行。
 
+### 合并与正式发布验证（合并提交 `100c990`，收尾 `357c5e3`）
+
+功能开发到此冻结，转入验收与发布。
+
+- **合并方式**：merge commit（非 squash / rebase），保留 16 个提交的完整演进，
+  与本文各节记录一一对应；`collector.py` / `analyzer.py` 未被改动。
+- **合并后 main 上的 tests 第一次运行失败了**，失败在 `browser` job 的 WebKit 步骤（Chromium 通过）。
+  上一轮埋的 Actions 注解机制这次起了作用，直接给到确切失败行：
+
+  ```
+  FAIL [webkit] [章节] 第 2 章 8 个渐显元素滚入后都完整显现
+       -> 1/8 未显现：#0 {"visible":true,"opacity":0.218519,"centered":false}
+  ```
+
+  元素已进入可见态、只是 `opacity` 停在 0.218 —— 采样时 0.7s 的渐显过渡还没跑完。
+  两个原因都在**验收脚本**里，与产品无关：
+
+  1. `story.css` 有 `html { scroll-behavior: smooth }`，脚本用 `window.scrollBy` 滚动会启动一段
+     平滑滚动动画。WebKit 在 CI 上走软件渲染、动画更慢，元素迟迟不进入观察器；等它开始渐显时
+     轮询窗口已接近用尽，于是采到过渡中的快照。→ 测试里把 `scroll-behavior` 置为 `auto` 并改用
+     `window.scrollTo` 瞬时跳转（**只关滚动动画，渐显过渡仍照旧验证**）。
+  2. 早退条件里带了 `centered`。文档末尾的元素本来就不可能滚到正中，该条件永不成立，
+     循环只能跑满 `maxMs` 再返回一个过渡中的快照。→ 只等真正被断言的两条
+     （`.is-visible` + `opacity ≥ 0.99`），`centered` 降级为诊断信息。
+  3. 同时把等待上界 2500ms → 6000ms、轮询 120ms → 100ms。
+
+  修复后本地 WebKit 连跑 3 次全过、Chromium 53 项全过；main 复跑 **tests 7/7 全绿**。
+- **Pages 发布**：合并前线上还是 V1（`story-public.html` 返回 404）；合并后 `pages` 工作流的
+  `build` 与 `deploy` 均成功，线上首页即 V2 故事页，`story-public.html` 由 404 → 200。
+- **线上实机抽查**（`https://fls666.github.io/mcd-time-machine/story-public.html`，61136 字节）：
+  `¥`/`￥` **0 次**、到日日期 **0 处**、门店名 **0 处**、「年-月」粒度 **15 处**（与本地一致）、
+  `data-privacy="public"`、示例数据徽章在；同站个人版作对照 `¥` 出现 4 次 —— 两版差异真实存在。
+- **发布前审计**（只读）：工作区干净、领先 main 16 提交 / 落后 0、HEAD 的 check-runs 7/7、
+  PR `mergeable_state = clean`、全仓扫描无真实凭据（仅测试夹具里的假手机号与假 Bearer 串）、
+  真实订单文件（`doctor.json` / `raw/` / `orders.normalized.json`）均未入库、交付材料 14/14 齐备。
+
 ## 十三、WorkBuddy 在项目中的实际作用
 
 - **调研**：检索并归纳官方赛事规则与 29 个 MCP Tool 的能力边界，据此收敛选题
@@ -444,7 +482,9 @@ CI 三个 job 全绿：`unittest`（Python 3.9–3.13）、`story`（jsdom）、
 
 1. **已完成**：示例数据全链路、239 条单元测试、CI 在 Python 3.9–3.13 上通过、编译检查通过、
    故事页前端冒烟（jsdom，增强 / 降级 / 恶意数据 / 极端字符 / 公开版五路径，135 项）通过、
-   浏览器验收（Playwright，Chromium 375×812 与 WebKit 390×844 两个引擎**各 53 项**）通过。
+   浏览器验收（Playwright，Chromium 375×812 与 WebKit 390×844 两个引擎**各 53 项**）通过；
+   **V2.0 已合并进 `main`（合并提交 `100c990`），GitHub Pages 已自动发布并线上抽查确认脱敏生效**
+   （`story-public.html` 中 `¥` 0 次、到日日期 0 处、门店名 0 处、月粒度 15 处）。
 2. **尚未完成**：**真实 MCP 联调需账号持有者本人执行**（WorkBuddy 没有用户的 Token，也不应索取）。
    在联调完成前，本项目不作「已通过真实环境验收」的表述。
    官方 `order-list` 描述为「查询**近期**订单」，服务端可能只返回有限条数，属接口范围而非本工具缺陷。

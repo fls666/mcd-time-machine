@@ -3,7 +3,7 @@
 > 把吃过的每一单，变成一份可分享的年度回忆、口味画像和消费趋势报告。
 
 基于 **麦当劳中国 MCP（Model Context Protocol）开放能力** 开发的 Skill + CLI 工具：读取你的历史订单，
-在本地完成统计与画像，输出一份终端简报 + Markdown 报告 + 一张可以直接发出去的 HTML 年度卡片。
+在本地完成统计与画像，输出一份终端简报 + Markdown 报告 + 完整 HTML 报告 + **V2.0 沉浸式年度故事页**（六章节滚动叙事 + 隐私友好竖版分享卡片）。
 
 **零第三方依赖**（只用 Python 标准库）；**数据不出本机**，不上传、不外传。
 
@@ -11,12 +11,22 @@
 
 ## 先看效果（不用装任何东西）
 
-- **示例年度报告（HTML）**：[docs/preview.html](./docs/preview.html) —— 直接在浏览器打开，单文件、离线可看
+- **示例年度故事页（V2.0，推荐先看这个）**：[docs/preview-story.html](./docs/preview-story.html) —— 单文件、离线可看，手机竖屏体验最佳，第 6 章可导出分享卡片
+- **公开分享版示例**：[docs/preview-story-public.html](./docs/preview-story-public.html) —— 同一份数据用 `--privacy public` 生成，文件里已不含金额 / 门店名 / 到日日期
+- **示例年度报告（HTML）**：[docs/preview.html](./docs/preview.html) —— 完整数据版报告
 - **示例年度报告（Markdown）**：[docs/preview.md](./docs/preview.md)
-- **在线示例（GitHub Pages，直接点开即可）**：<https://fls666.github.io/mcd-time-machine/>
+- **分享卡片导出实物**：[docs/sample-share-card.png](./docs/sample-share-card.png)（默认四项隐藏）、
+  [docs/sample-share-card-longtext.png](./docs/sample-share-card-longtext.png)（超长文本截断）、
+  [docs/sample-share-card-public.png](./docs/sample-share-card-public.png)（公开分享版）、
+  [docs/sample-share-card-extreme.png](./docs/sample-share-card-extreme.png)（极端字符：超长英文 / Emoji / 中英混排 / 空白值，四项全开）、
+  [docs/sample-share-card-webkit.png](./docs/sample-share-card-webkit.png)（同一页面在 WebKit 引擎下的导出，覆盖 Safari / iOS）
+  —— 由 CI 里的真实 Chromium 与 WebKit 导出，非设计稿
+- **在线示例（GitHub Pages，直接点开即可）**：<https://fls666.github.io/mcd-time-machine/>（首页即故事页，`report.html` 为完整报告，`story-public.html` 为公开分享版）
 - 由 GitHub Actions 在每次主分支更新后自动重新生成并发布；
   若 Pages 不可用（例如仓库为私有、或 Source 未设为 GitHub Actions），
   工作流会自动跳过部署，改为在 Actions 运行页提供 `preview-report` 产物下载
+- **想在手机上看？** 见 [docs/REAL_DEVICE_CHECK.md](./docs/REAL_DEVICE_CHECK.md)：
+  三种把页面放到手机上的方式，以及一份逐项打勾的真机走查清单（含分享卡片导出的机型差异）
 
 > 示例报告由 `mcdtm demo` 用**虚构订单**生成，报告顶部有醒目的「示例数据」标识，不会被误认为真实消费记录。
 
@@ -75,6 +85,11 @@ mcdtm all         # 拉取（自动翻页）+ 分析 + 生成报告
 mcdtm demo --count 160
 ```
 
+> 想复现完全一样的一份示例报告？加 `--as-of 2026-06-30` 固定基准日期即可 ——
+> 示例数据的随机种子固定，只有「基准日期」默认取当前时间，因此同一 seed 下
+> 指定 `--as-of` 会让输出逐字节可复现（CI 的浏览器验收就是这么钉住版面的，
+> 否则日期漂移会让月度桶与周次分布每天都不一样）。
+
 **Windows 用户**：看 [docs/WINDOWS_SETUP.md](./docs/WINDOWS_SETUP.md)，
 从装 Python 到配环境变量到排障，每一步都有截图级说明；
 也可以直接跑 `python scripts\windows_wizard.py` 走一键向导。
@@ -90,11 +105,13 @@ mcdtm demo --count 160
 | `mcdtm tools` | 列出麦当劳 MCP 当前开放的工具，`*` 标记本工具会用到的 |
 | `mcdtm fetch` | 拉取历史订单（**自动翻页**）与菜单、营养、优惠券等增强数据 |
 | `mcdtm analyze` | 基于已拉取数据做分析并生成报告 |
+| `mcdtm story` | 用已有 `profile.json` 重新生成沉浸式故事页 `story.html`（不联网、不重算） |
 | `mcdtm all` | `fetch` + `analyze` |
 | `mcdtm inspect orders` | 打印某个工具的原始返回，便于核对字段结构（**含隐私，勿公开**） |
 | `mcdtm share` | 导出**脱敏**后的结构报告 `share.json`，供排障求助（公开前仍需人工过目） |
 
-通用参数（写在子命令前后都可以）：`--token` / `--endpoint`（默认 `https://mcp.mcd.cn`）/ `--out`（默认 `./mcdtm-output`）。
+通用参数（写在子命令前后都可以）：`--token` / `--endpoint`（默认 `https://mcp.mcd.cn`）/ `--out`（默认 `./mcdtm-output`）
+/ `--privacy`（`personal` 默认，`public` 为公开分享版）。
 `fetch` 另有 `--max-pages`（默认 30）与 `--page-size`（默认 100）。
 
 ---
@@ -145,6 +162,100 @@ mcdtm demo --count 160
 
 ---
 
+## V2.0 沉浸式年度故事页（`story.html`）
+
+除了完整报告，每次分析还会产出一份面向手机竖屏的**六章节滚动故事**：
+
+| 章节 | 内容 |
+| --- | --- |
+| 1 时光机启动 | 年度标题、统计区间、订单 / 单品 / 跨度 / 连续打卡四个数字、来源徽章、「进入故事」按钮 |
+| 2 故事的起点 | 最早的一单 + 年度回忆时间轴 |
+| 3 我的麦麦日常 | 消费节奏、出没时段、一周节奏、品类偏好、常点单品、黄金搭档 |
+| 4 口味人格测试结果 | 口味标签 + 可信度进度条 + 数据依据 + 样本量说明 |
+| 5 这一年的变化 | 前后半程口味对比（含分组依据）、月度订单趋势、趣味记录 |
+| 6 年度终章 | 年度关键词、下次试试、分享卡片生成器、数据说明 |
+
+体验与工程上的取舍：
+
+- **动画只是增强**：章节正文由 Python 直接渲染进 HTML，JS 只负责渐显。
+  禁用 JS、JS 报错、或浏览器缺少 `IntersectionObserver` 时，六章内容依然完整可读；
+  系统开启「减少动态效果」（`prefers-reduced-motion`）时不做任何位移与渐变。
+- **移动端优先**：`svh` 高度兼容 iOS 地址栏收缩、底部安全区留白、
+  中文长串与长商品名用 `overflow-wrap: anywhere` 防止横向溢出。
+- **离线单文件**：CSS / JS / 数据全部内联，不请求任何网络资源，双击即开。
+- **模板与代码分离**：`assets/story.html`（骨架）、`assets/story.css`、`assets/story.js`
+  由 `mcd_timemachine/story.py` 注入数据组装，不再把 HTML / CSS / JS 堆在 `reporter.py` 里。
+
+### 隐私友好分享卡片
+
+第 6 章可生成 **1080 × 1920 竖版 PNG**（`share-card.png`），适配常见手机分享场景：
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| 消费金额 | **隐藏** | 勾选后才写入图片，未勾选画面显示「已隐藏」 |
+| 门店名称 | **隐藏** | 同上 |
+| 消费日期 | **隐藏** | 同上 |
+| 生成时间 | **隐藏** | 同上；不勾选时页脚也不会出现具体时刻 |
+
+- 卡片由本机 Canvas 绘制并导出，**不含位置、账号等元数据**（导出的 PNG 里没有 `tEXt` / `iTXt` / `tIME` 等块）；
+- 未勾选的字段不会进入绘制文本，也不会写进「复制卡片配置」；
+- 单行文字都有**最大绘制宽度 + 省略号截断**：商品名、门店名再长也不会顶出画布或压到相邻文字；
+- 版式是**自上而下一次性分配高度预算**：关键词先排版拿到真实行数，人格描述的行数按剩余空间自动裁剪，
+  面板高度随之自适应；人格名、关键词、字段面板之间不会压叠，字段面板也不会越过页脚。
+  极端超长文本下宁可少画一行描述，也不会把文字画到面板外面。
+
+### 两种生成模式：个人完整版 / 公开分享版
+
+「隐私浏览」开关只是**前端遮挡**，文件里仍有原始数据。要真正安全地分享，用生成期的脱敏模式：
+
+```bash
+mcdtm demo  --out mcdtm-output                  # 默认 personal：个人完整版（含原始数据）
+mcdtm story --out mcdtm-output --privacy public # 公开分享版：敏感值在生成时就不写入文件
+```
+
+| 模式 | 金额 | 门店名称 | 日期 | 分享卡片字段 | 页面提示 |
+| --- | --- | --- | --- | --- | --- |
+| `personal`（默认） | 保留，页面可临时遮挡 | 保留 | 保留到日 | 四项可勾选（默认隐藏） | 顶部黄条：本文件含原始数据，请勿直接转发 |
+| `public` | **不写入文件** | **不写入文件** | 只保留「年-月」 | 四项置灰、无可展示内容 | 顶部绿条：已移除，且提示同目录其它文件仍是完整的 |
+
+- 公开版是**生成期脱敏**：不是 CSS 遮挡，`story.html` 里连一个 `¥`、一个 `2026-06-27` 形式的日期、
+  一个门店名都找不到（有单元测试与浏览器测试双重断言）。脱敏分三层、逐层收紧，末尾再加一道内容完整性守卫：
+
+  | 层 | 时机 | 判据 |
+  | --- | --- | --- |
+  | ① 结构化 | **渲染之前**，作用于数据 | 字段名（地址 / 订单号 / 电话 / 定位 / 账号…）与字段类型（数值默认按金额处理，只有登记过的计数才放行），因此将来新增同类字段会被自动覆盖 |
+  | ② 值扫描 | 渲染之后，作用于整份 HTML（含内联 JSON） | 已知形态：金额、到日日期、门店名、地址、订单号形态的编号 |
+  | ③ 自检 | 输出之前 | 从原 `profile` 反推所有敏感原始值（含金额的多种格式化写法）逐个比对成品；**命中即拒绝输出**（抛错、退出码 3、一份文件都不写），正常情况下应当零命中 |
+  | ④ 完整性（守卫，非脱敏） | 输出之前 | 用原 `profile` 推导公开版应有的结构量（章节、关键数字、条形行、胶囊数、月柱数、门店家数…），对不上即拒绝输出（退出码 4），防止脱敏过度把报告削空 |
+
+  ②③ 是兜底，不是主力：有测试**关掉第三层**断言公开版依然零残留，
+  另有一条测试故意把原值拼回 HTML，确认自检确实能抓到泄漏；
+  还有测试把前三层打成恒等函数，确认守卫真的会拦（而不是形同虚设）。
+- 保留「年-月」粒度是因为第 5 章的月度趋势与口味变化分组依赖月份，页面与文档都写明了这一点；
+  年份（「你的 2026 麦麦年度回忆」）本身不敏感，会单独保留下来；
+- `report.md` / `report.html` / `profile.json` **始终是完整报告**，不受该参数影响 ——
+  公开版页面上与页脚都会提醒不要把这些文件一起发出去。
+
+### 前端与真实浏览器验收
+
+```bash
+# 1) jsdom 冒烟：真跑页面脚本，五条路径（增强 / 降级 / 恶意数据 / 极端字符 / 公开版）
+npm install jsdom
+node scripts/smoke_story.js mcdtm-output/story.html path/to/public-story.html
+
+# 2) 真实浏览器验收：手机视口布局、六章滚动、长文本与极端字符抗溢出、PNG 尺寸与元数据
+#    Chromium 覆盖 Android Chrome，WebKit 覆盖 Safari / iOS
+npm install playwright && npx playwright install chromium webkit
+node scripts/browser_check.js mcdtm-output/story.html path/to/public-story.html --engine=chromium --viewport=375x812 --keep-png artifacts
+node scripts/browser_check.js mcdtm-output/story.html path/to/public-story.html --engine=webkit --viewport=390x844 --keep-png artifacts
+```
+
+> 两个引擎的导出样本会分目录存放，不会互相覆盖。
+> WebKit 的 PNG 体积明显小于 Chromium（约 1/10），这是它默认用调色板 / 更低色深编码所致，
+> 像素尺寸与画面内容完全一致，`docs/sample-share-card-webkit.png` 可对照。
+
+---
+
 ## 项目结构
 
 ```
@@ -153,11 +264,18 @@ mcd-time-machine/
 │   ├── mcp_client.py     # Streamable HTTP MCP 客户端（按 id 匹配响应、会话失效重建）
 │   ├── collector.py      # 分页采集 + Schema 容错归一化 + 覆盖率统计
 │   ├── analyzer.py       # 口味画像 / 趋势 / 关键词 / 回忆 / 推荐
-│   ├── reporter.py       # 终端简报 + Markdown + HTML 卡片
+│   ├── reporter.py       # 终端简报 + Markdown + 完整 HTML 报告
+│   ├── story.py          # V2.0 六章节故事页组装 + 分享卡片数据
+│   ├── assets/           # 故事页模板：story.html / story.css / story.js
 │   ├── demo_data.py      # 虚构示例数据生成器
 │   └── cli.py            # 命令行入口
-├── tests/                # 50+ 条 unittest 用例，零第三方依赖
+├── scripts/
+│   ├── windows_wizard.py # Windows 一键联调向导
+│   ├── smoke_story.js    # 故事页前端冒烟（增强/降级/恶意数据/极端字符/公开版五路径，需 jsdom）
+│   └── browser_check.js  # 真实浏览器验收（手机视口布局 + PNG 导出，支持 Chromium / WebKit，需 playwright）
+├── tests/                # 230+ 条 unittest 用例，零第三方依赖
 ├── docs/preview.html     # 示例年度报告（可直接在浏览器打开）
+├── docs/preview-story.html  # 示例年度故事页（V2.0）
 ├── skill/SKILL.md        # WorkBuddy Skill 定义（对话式使用）
 ├── MCP_INTEGRATION.md    # 用了哪些 MCP Tool、怎么调用、业务价值
 ├── CONTEST_DECLARATION.md
@@ -175,9 +293,28 @@ python -m unittest discover -s tests -v
 ```
 
 覆盖：空数据、缺金额/缺日期订单、重复订单去重、嵌套单品字段污染、
-分页终止与截断、边界日期、连续打卡、HTML 转义与结构闭合、示例数据确定性。
+分页终止与截断、边界日期、连续打卡、HTML 转义与结构闭合、示例数据确定性，
+以及故事页的六章结构、离线无外链、动效降级开关、隐私默认值与 JSON 转义。
+还包含：分享预览的注入回归（恶意商品名 / 门店名 / 特殊字符 / 中文长文本）、
+属性转义与变量遮蔽护栏、公开分享版的**三层生成期脱敏 + fail-closed 发布**
+（第一层字段名判据 / 第二层值形态扫描 / 第三层自检——检出残留就抛错、**一份文件都不写**，
+数值字段必须显式登记或带 `_pct`/`_rate`/`_count` 后缀才放行）、
+**公开版内容完整性检查**（章节数、关键数字、条形行、胶囊数、月柱数、门店家数等逐项对齐源数据，
+脱敏过度即拒绝输出）、生成时间默认隐藏、卡片长文本宽度约束、
+Emoji 按字素截断与空白值兜底，以及脱敏边界用例（小数金额 / 中文地址 / 英文与斜杠日期 /
+异常字段名 `addr2`·`mobile1`·`addressLine1` / 嵌套数据），
+以及卡片版面高度预算（人格面板高度随内容自适应、描述超预算时逐行裁剪、版面几何钩子不得泄漏原文）。
 
-`push` / `pull_request` 时 GitHub Actions 会在 Python 3.9 ~ 3.13 上自动跑编译检查、单元测试与 demo 冒烟。
+`push` / `pull_request` 时 GitHub Actions 会在 Python 3.9 ~ 3.13 上自动跑编译检查、单元测试与 demo 冒烟，
+并额外起两个前端 job：
+
+| job | 工具 | 覆盖 |
+| --- | --- | --- |
+| `story` | jsdom | 真跑页面脚本的五条路径：增强渐显 / 降级可读 / 恶意数据注入 / 极端字符 / 公开分享版；断言预览只按纯文本呈现、四项隐私默认隐藏、绘制文字不越出 1080×1920、Emoji 不被劈成孤立代理对，并从页面暴露的版面几何断言「描述没跑出人格面板 / 胶囊没压到字段面板 / 字段面板没越过页脚」；公开版另与个人版逐章、逐月比对结构量，确认脱敏没伤到可读性 |
+| `browser` | Playwright + Chromium、Playwright + WebKit | 真实布局与真实 Canvas，**两个引擎各跑一遍**：Chromium 用 375×812（对标 Android Chrome），WebKit 用 390×844（对标 iPhone Safari）；无横向溢出、36 个渐显元素逐个滚动验证、长文本与极端字符（Emoji / 中英混排 / 空值）抗溢出、隐私开关、导出 PNG 的尺寸与元数据块，并用同一条版面几何断言复核真实字体度量下的版式 |
+
+单引擎等于把 Safari 的字体回退与 Canvas 度量差异留在盲区里，因此 `browser` job 拆成两个 step 分别指定引擎。
+两个 job 都设了 `SMOKE_REQUIRE_*=1`：依赖装不上直接失败，**不允许冒烟静默跳过**。
 
 ---
 
@@ -203,15 +340,21 @@ python -m unittest discover -s tests -v
 - 仓库配置示例只含 `${MCD_MCP_TOKEN}` 占位符
 - `.gitignore` 已排除 `mcdtm-output/`、`.env` 等一切可能含敏感信息的文件
 - **请勿把 `mcdtm-output/raw/` 下的原始返回（含订单、门店等个人信息）提交到任何公开仓库或发给他人**
+- 分享场景分两档：页面上的「隐私浏览」只是**临时遮挡**；要真正脱敏请用
+  `mcdtm story --privacy public`，金额 / 门店名 / 到日日期在渲染前就不写进文件（三层脱敏，见上文）
+- **公开版是 fail-closed 的**：第三层自检一旦发现敏感值残留，程序会**直接失败并退出（退出码 3）、
+  不写出任何 HTML**，而不是「替换掉再继续输出」。这样将来新增字段时，脱敏规则漏了这一项会立刻暴露，
+  不会悄悄把隐私发出去。同理，若脱敏把内容削得过狠（章节、计数缺失），完整性检查也会拦下（退出码 4）
 
 **6. 零依赖**
 只依赖 Python 标准库，`git clone` 下来就能跑。
+前端验收用的 jsdom / Playwright 仅用于测试，不影响运行期（也未被 import 进任何运行路径）。
 
 ---
 
 ## 已知限制
 
-- **真实 MCP 联调需本人完成**：本项目已通过 97 条单元测试与示例数据全链路验证，
+- **真实 MCP 联调需本人完成**：本项目已通过 239 条单元测试与示例数据全链路验证，
   但各账号的返回结构可能不同。首次使用请先运行 `mcdtm doctor`；
   若 `order-list` 解析异常，跑 `mcdtm share` 生成脱敏结构报告贴到 Issue，
   我会据此补进字段候选表（**不要贴 `doctor.json` 或 `raw/`，里面有真实数据**）。

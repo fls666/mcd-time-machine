@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import random
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .collector import _guess_category
 
@@ -29,10 +29,18 @@ STORES = [
 CHANNELS = ["麦乐送", "到店取餐", "堂食", "得来速"]
 
 
-def generate(orders: int = 160, seed: int = 1024, days: int = 400) -> List[Dict[str, Any]]:
-    """生成一份可直接走分析流程的示例订单数据。"""
+def generate(orders: int = 160, seed: int = 1024, days: int = 400,
+             end: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """生成一份可直接走分析流程的示例订单数据。
+
+    ``end`` 为空时取当前时间；显式传入可让同一 ``seed`` 在任何时候都产出**完全一致**的结果。
+    CI 的浏览器验收与故事页冒烟依赖这一点：否则「基准日期」每天漂移，周次 / 时段 / 月度桶
+    随之变化，版面几何断言就会在个别日期莫名失败，预览页也会每天产生无意义的 diff。
+    """
     rng = random.Random(seed)
-    end = datetime.now()
+    end = end or datetime.now()
+    if end.tzinfo is not None:  # 统一成 naive，避免 aware/naive 相减报错
+        end = end.replace(tzinfo=None)
     start = end - timedelta(days=days)
 
     result: List[Dict[str, Any]] = []

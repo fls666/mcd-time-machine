@@ -1,0 +1,1383 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-privacy="personal">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="generator" content="麦麦时光机 2.0.0">
+<meta name="description" content="统计区间 2025-09-14 ~ 2026-10-14，共 160 单。六章节滚动故事 + 隐私友好分享卡片。">
+<title>麦麦时光机 · 我的年度回忆</title>
+<style>
+/* 麦麦时光机 · 沉浸式故事样式（V2.0）
+ *
+ * 三条硬性设计约束：
+ * 1. 移动端优先：章节高度用 svh，兼容 iOS Safari 地址栏收缩；底部留安全区。
+ * 2. 动画只是增强：.reveal 默认完全可见，只有 JS 给 <html> 加上 .js 后才做渐显。
+ *    JS 失效、或系统开启「减少动态效果」时，所有内容依旧完整可读。
+ * 3. 零外部依赖：不引用任何网络字体、图片、脚本，双击 HTML 即可离线打开。
+ */
+
+:root {
+  --red: #DA291C;
+  --red-deep: #A81A10;
+  --yellow: #FFC72C;
+  --ink: #1B1B1B;
+  --sub: #6E6E73;
+  --line: #EDE6DE;
+  --bg: #FFF8F1;
+  --card: #FFFFFF;
+  --radius: 22px;
+  --shadow: 0 12px 32px rgba(120, 60, 30, .10);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+          "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", "Segoe UI",
+          Roboto, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+  /* 中文长串、长商品名、无空格英文都要能断行，避免手机上横向溢出 */
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+h1, h2, h3, p, ul, ol { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+
+/* ---------------------------------------------------------------- 顶部装置 */
+
+.progress {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 4px;
+  background: rgba(0, 0, 0, .06);
+  z-index: 40;
+}
+.progress i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--yellow), var(--red));
+  transition: width .18s linear;
+}
+
+.dots {
+  position: fixed;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dots a {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .16);
+  text-decoration: none;
+  position: relative;
+  transition: background .2s, transform .2s;
+}
+.dots a.active { background: var(--red); transform: scale(1.45); }
+.dots a span {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--sub);
+  background: rgba(255, 255, 255, .94);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 10px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s;
+}
+.dots a:hover span, .dots a:focus-visible span { opacity: 1; }
+
+.priv-toggle {
+  position: fixed;
+  left: 14px;
+  bottom: calc(16px + var(--safe-b));
+  z-index: 36;
+  font: inherit;
+  font-size: 12px;
+  color: var(--sub);
+  background: rgba(255, 255, 255, .92);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.priv-toggle[aria-pressed="true"] {
+  color: #1a7f37;
+  border-color: #b7e2c2;
+  background: #eaf7ee;
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+.skip:focus {
+  left: 12px;
+  top: 12px;
+  z-index: 60;
+  background: #fff;
+  padding: 8px 14px;
+  border-radius: 10px;
+}
+
+/* ---------------------------------------------------------------- 章节骨架 */
+
+main { display: block; }
+
+.scene {
+  position: relative;
+  padding: 72px 20px calc(64px + var(--safe-b));
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+@supports (min-height: 100svh) {
+  .scene { min-height: 100svh; }
+}
+
+.scene-inner {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.ch-no {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: .18em;
+  color: var(--red);
+  font-weight: 700;
+}
+.ch-no::before {
+  content: "";
+  width: 22px;
+  height: 2px;
+  background: var(--red);
+  border-radius: 2px;
+}
+
+.ch-title {
+  font-size: clamp(24px, 7vw, 34px);
+  line-height: 1.3;
+  margin: 10px 0 6px;
+  letter-spacing: .5px;
+}
+.ch-sub {
+  color: var(--sub);
+  font-size: 14px;
+  margin-bottom: 22px;
+}
+
+/* ---------------------------------------------------------------- 第一章 */
+
+.scene-hero {
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(255, 199, 44, .30), transparent 60%),
+    linear-gradient(160deg, var(--red) 0%, var(--red-deep) 100%);
+  color: #fff;
+  text-align: center;
+  overflow: hidden;
+}
+.scene-hero::after {
+  content: "";
+  position: absolute;
+  right: -90px;
+  top: -90px;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: var(--yellow);
+  opacity: .20;
+  pointer-events: none;
+}
+.hero-eyebrow {
+  font-size: 12px;
+  letter-spacing: .32em;
+  opacity: .82;
+  text-transform: uppercase;
+}
+.hero-title {
+  font-size: clamp(30px, 9vw, 46px);
+  line-height: 1.25;
+  margin: 14px 0 10px;
+  font-weight: 800;
+}
+.hero-range {
+  font-size: 14px;
+  opacity: .9;
+}
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 26px auto 0;
+  max-width: 480px;
+}
+.hero-stats div {
+  background: rgba(255, 255, 255, .14);
+  border: 1px solid rgba(255, 255, 255, .24);
+  border-radius: 16px;
+  padding: 12px 10px;
+}
+.hero-stats b {
+  display: block;
+  font-size: 22px;
+  line-height: 1.3;
+}
+.hero-stats span {
+  font-size: 12px;
+  opacity: .85;
+}
+.badge {
+  display: inline-block;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  margin: 18px 6px 0;
+  border: 1px solid transparent;
+}
+.badge.real { background: #eaf7ee; color: #1a7f37; border-color: #b7e2c2; }
+.badge.demo { background: #fff1d6; color: #8a5a00; border-color: #ffd28a; }
+.badge.ghost { background: rgba(255, 255, 255, .16); color: #fff; border-color: rgba(255, 255, 255, .35); }
+
+.cta {
+  display: inline-block;
+  margin-top: 28px;
+  background: var(--yellow);
+  color: #4a3200;
+  font-weight: 700;
+  text-decoration: none;
+  padding: 14px 32px;
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .18);
+}
+.cta:active { transform: translateY(1px); }
+.hero-hint {
+  margin-top: 16px;
+  font-size: 12px;
+  opacity: .78;
+}
+
+/* ---------------------------------------------------------------- 卡片 */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px 18px;
+  box-shadow: var(--shadow);
+  margin-top: 16px;
+}
+.card h3 {
+  font-size: 15px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card h3::before {
+  content: "";
+  width: 4px;
+  height: 15px;
+  background: var(--red);
+  border-radius: 2px;
+  flex: none;
+}
+.muted { color: var(--sub); font-size: 12px; margin-top: 10px; line-height: 1.7; }
+
+.kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 18px;
+  font-size: 13px;
+  color: var(--sub);
+}
+.kv b { color: var(--ink); font-weight: 600; }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+}
+.stat-grid div {
+  background: #FFF4E4;
+  border: 1px solid #FFE3B8;
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+.stat-grid b { display: block; font-size: 20px; color: var(--red-deep); }
+.stat-grid span { font-size: 12px; color: var(--sub); }
+
+/* 条形图：品类 / 时段 / 月份 */
+.bars li { margin: 12px 0; font-size: 13px; }
+.bar-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+.bar-head .n { font-weight: 600; }
+.bar-head .v { color: var(--sub); flex: none; }
+.track {
+  /* 条形图轨道多为 <span>，必须块级化，否则 height 会被忽略 */
+  display: block;
+  height: 10px;
+  background: #F3EDE6;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--yellow), var(--red));
+  width: 0;
+  transition: width .9s cubic-bezier(.22, .8, .3, 1);
+}
+.fill.is-set { width: var(--w, 0%); }
+.fill.blue { background: linear-gradient(90deg, #9BD1FF, #2C7BD1); }
+
+.pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.pill {
+  background: #FFF4E4;
+  border: 1px solid #FFE3B8;
+  color: #7A4A00;
+  border-radius: 999px;
+  padding: 7px 13px;
+  font-size: 13px;
+}
+.pill i { font-style: normal; color: var(--sub); font-size: 12px; }
+
+/* 时间轴 */
+.timeline { border-left: 2px solid var(--line); margin-left: 6px; padding-left: 20px; }
+.timeline li { position: relative; padding: 12px 0; }
+.timeline li::before {
+  content: "";
+  position: absolute;
+  left: -27px;
+  top: 20px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--yellow);
+  border: 2px solid var(--red);
+}
+.timeline .t { font-weight: 700; font-size: 14px; }
+.timeline .d { font-size: 13px; color: var(--sub); margin-top: 3px; }
+
+.first-order {
+  background: linear-gradient(150deg, #FFF3D6, #FFFFFF);
+  border: 1px solid #FFE1A6;
+}
+.first-order .date { color: var(--red-deep); font-weight: 700; font-size: 15px; }
+.first-order .items {
+  font-size: clamp(18px, 5.4vw, 24px);
+  font-weight: 800;
+  line-height: 1.5;
+  margin: 8px 0;
+}
+
+/* 口味人格 */
+.persona-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-top: 14px;
+  box-shadow: var(--shadow);
+}
+.persona-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.persona-name { font-size: 20px; font-weight: 800; }
+.persona-conf { font-size: 12px; color: var(--sub); flex: none; }
+.persona-desc { font-size: 13px; color: var(--ink); margin-top: 8px; }
+.persona-evid { font-size: 12px; color: var(--sub); margin-top: 6px; }
+.persona-main {
+  background: linear-gradient(150deg, #FFEEDA, #fff);
+  border: 1px solid var(--yellow);
+}
+.persona-main .persona-name { font-size: clamp(22px, 6.5vw, 30px); color: var(--red-deep); }
+
+/* 口味变化 */
+.shift li { margin: 14px 0; }
+.shift-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  gap: 10px;
+}
+.shift-head b { font-size: 14px; }
+.shift-head .delta.up { color: var(--red); font-weight: 700; }
+.shift-head .delta.down { color: #1a7f37; font-weight: 700; }
+.shift-head .delta.flat { color: var(--sub); }
+.duo { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--sub); }
+.duo .track { flex: 1; }
+
+/* 月度柱状 */
+.month-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 130px;
+  margin-top: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.month-chart div {
+  flex: 1 0 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.month-chart i {
+  display: block;
+  width: 100%;
+  max-width: 26px;
+  border-radius: 6px 6px 2px 2px;
+  background: linear-gradient(180deg, var(--red), #F07A6A);
+  min-height: 3px;
+}
+.month-chart em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--sub);
+  white-space: nowrap;
+}
+
+/* 推荐 */
+.rec {
+  border: 1px dashed #FFD9A8;
+  background: #FFFAF1;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-top: 10px;
+}
+.rec .n { font-weight: 800; }
+.rec .r { font-size: 13px; color: var(--sub); margin-top: 4px; }
+
+.keywords { display: flex; flex-wrap: wrap; gap: 10px; }
+.keywords span {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 15px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.keywords span i {
+  display: block;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--sub);
+  margin-top: 3px;
+}
+
+/* ---------------------------------------------------------------- 分享卡片 */
+
+.share-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); margin-top: 16px; }
+.switches { display: grid; gap: 10px; }
+.sw {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  background: #FFF8F1;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+.sw input { width: 20px; height: 20px; accent-color: var(--red); flex: none; }
+.sw em { font-style: normal; font-size: 11px; color: var(--sub); margin-left: auto; flex: none; }
+
+.card-preview {
+  margin-top: 14px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #2a1408;
+  border: 1px solid var(--line);
+}
+.card-preview canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.field-preview { margin-top: 14px; font-size: 13px; color: var(--sub); }
+.field-preview li {
+  padding: 7px 0;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.field-preview b { color: var(--ink); font-weight: 600; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.actions button {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 22px;
+  cursor: pointer;
+  background: var(--red);
+  color: #fff;
+  flex: 1 1 auto;
+}
+.actions button.ghost {
+  background: #fff;
+  color: var(--red);
+  border: 1px solid var(--red);
+}
+.actions button:disabled { opacity: .6; cursor: progress; }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(28px + var(--safe-b));
+  transform: translate(-50%, 12px);
+  background: rgba(27, 27, 27, .92);
+  color: #fff;
+  font-size: 13px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s, transform .25s;
+  z-index: 50;
+  max-width: 88vw;
+  text-align: center;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+.warn {
+  margin-top: 14px;
+  font-size: 12px;
+  color: #8a5a00;
+  background: #FFF7E8;
+  border: 1px dashed #FFD9A8;
+  border-radius: 12px;
+  padding: 11px 13px;
+  line-height: 1.75;
+}
+
+/* ------------------------------------------------- 模式横幅（个人版 / 公开版） */
+
+.mode-banner {
+  margin: 12px 16px 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.mode-banner b { font-weight: 700; }
+.mode-banner code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: rgba(0, 0, 0, .07);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+/* 个人完整版：提醒文件里有原始数据 */
+.mode-banner.personal {
+  background: #FFF1D6;
+  color: #6E4400;
+  border: 1px solid #F5CE8A;
+}
+/* 公开分享版：提醒已移除敏感值，但同目录还有别的文件 */
+.mode-banner.public {
+  background: #E8F5EC;
+  color: #14532D;
+  border: 1px solid #A9D9BA;
+}
+
+/* 公开版里这些值压根没写进文件，遮挡开关没有意义，直接隐藏 */
+html[data-privacy="public"] .priv-toggle { display: none; }
+
+/* 公开版里被置灰的字段：不可勾选，说明原因 */
+.sw input:disabled + span { opacity: .62; }
+.sw input:disabled ~ em { color: #14532D; }
+
+/* ---------------------------------------------------------------- 页脚 */
+
+.foot {
+  padding: 40px 20px calc(56px + var(--safe-b));
+  text-align: center;
+  font-size: 12px;
+  color: var(--sub);
+  line-height: 1.9;
+  background: #FFF1E2;
+  border-top: 1px solid var(--line);
+}
+.foot a { color: var(--red); }
+
+/* ---------------------------------------------------------------- 动效增强 */
+
+/* 默认（无 JS / 动画失效）：内容完全可见 */
+.reveal { opacity: 1; transform: none; }
+
+/* 只有 JS 成功接管后才启用渐显，且尊重系统「减少动态效果」偏好 */
+@media (prefers-reduced-motion: no-preference) {
+  html.js .reveal {
+    opacity: 0;
+    transform: translateY(26px);
+    transition: opacity .7s cubic-bezier(.22, .8, .3, 1),
+                transform .7s cubic-bezier(.22, .8, .3, 1);
+    will-change: opacity, transform;
+  }
+  html.js .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 系统偏好减少动效：一律直接显示，不做任何位移或渐变 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .reveal { opacity: 1 !important; transform: none !important; }
+}
+
+/* 隐私浏览：把金额 / 门店 / 日期就地打码，不影响其它内容 */
+html.story-privacy .pv {
+  color: transparent;
+  background: #E9E9EE;
+  border-radius: 6px;
+  padding: 0 6px;
+}
+html.story-privacy .pv::after {
+  content: attr(data-mask);
+  color: #8A8A90;
+  font-size: .92em;
+}
+
+@media (max-width: 380px) {
+  .scene { padding: 56px 14px 48px; }
+  .dots { right: 8px; gap: 8px; }
+  .hero-stats { gap: 8px; }
+}
+
+@media (min-width: 900px) {
+  .scene { padding: 96px 32px; }
+  .dots a span { font-size: 13px; }
+}
+
+/* 打印：直接展开全部内容，方便评审导出 PDF */
+@media print {
+  .progress, .dots, .priv-toggle, .cta, .actions { display: none !important; }
+  .scene { min-height: auto; page-break-after: always; }
+  .reveal { opacity: 1 !important; transform: none !important; }
+  body { background: #fff; }
+}
+
+</style>
+</head>
+<body>
+<a class="skip" href="#ch2">跳到故事正文</a>
+<div class="progress" aria-hidden="true"><i id="progressBar"></i></div>
+<nav class="dots" id="dots" aria-label="章节导航"></nav>
+<button class="priv-toggle" id="privToggle" type="button" aria-pressed="false">隐私浏览：关</button>
+<noscript>
+  <p style="margin:0;padding:10px 16px;background:#FFF1D6;color:#7A4A00;font-size:13px;text-align:center">
+    当前浏览器未启用 JavaScript：故事的六章内容仍可完整阅读，仅滚动动效与分享卡片导出不可用。
+  </p>
+</noscript>
+<div class='mode-banner personal' role='note'><b>个人完整版</b> 本文件包含你的原始数据：累计金额、门店名称、具体日期都在里面；页面左下角「隐私浏览」开关只是<b>临时遮挡</b>，不会从文件里删掉任何内容，请勿直接转发本文件。要对外分享，请用 <code>mcdtm story --privacy public</code> 另生成一份公开版，或只发第 6 章导出的 share-card.png。</div><section class='scene scene-hero' id='ch1' data-title='时光机启动'><div class='scene-inner'><p class='hero-eyebrow'>MCD TIME MACHINE</p><h1 class='hero-title'>你的 2026 麦麦年度回忆</h1><p class='hero-range'>统计区间 <span class='pv' data-mask='已隐藏'>2025-09-14</span> ~ <span class='pv' data-mask='已隐藏'>2026-10-14</span></p><span class='badge demo'>示例数据 · 虚构生成，非真实订单</span><span class='badge ghost'>160 单已解析</span><div class='hero-stats'><div><b>160 单</b><span>订单总数</span></div><div><b>605 件</b><span>单品总数</span></div><div><b>396 天</b><span>记录跨度</span></div><div><b>4 天</b><span>最长连续打卡</span></div></div><a class='cta' href='#ch2'>进入故事</a><p class='hero-hint'>向下滚动即可翻页，右侧圆点可跳章；想先核对数据可看同目录 report.html</p></div></section><section class='scene' id='ch2' data-title='故事的起点'><div class='scene-inner'><p class='ch-no'>CHAPTER 02</p><h2 class='ch-title'>故事的起点</h2><p class='ch-sub'>从最早的一单开始，把这一年重新走一遍</p><div class='card first-order reveal'><div class='date'><span class='pv' data-mask='已隐藏'>2025-09-14</span></div><div class='muted' style='margin-top:0'>这是这段记录里最早的一单</div></div><div class='card reveal'><h3>年度回忆时间轴</h3><ul class='timeline'><li class='reveal'><div class='t'>最豪华的一单</div><div class='d'><span class='pv' data-mask='已隐藏'>2026-06-27</span> 花了 <span class='pv' data-mask='已隐藏'>¥129.00</span>，点了 板烧鸡腿堡、美式咖啡、麦辣鸡翅、拿铁。</div></li><li class='reveal'><div class='t'>最豪横的一次</div><div class='d'><span class='pv' data-mask='已隐藏'>2026-09-30</span> 一次点了 8 件。</div></li><li class='reveal'><div class='t'>最常光顾的月份</div><div class='d'><span class='pv' data-mask='已隐藏'>2025-12</span> 你点了 18 单，累计 <span class='pv' data-mask='已隐藏'>¥832.50</span>。</div></li><li class='reveal'><div class='t'>你的主场</div><div class='d'><span class='pv' data-mask='已隐藏'>麦当劳（公司楼下餐厅）</span>，一共去过 43 次。</div></li><li class='reveal'><div class='t'>深夜食堂</div><div class='d'>有 15 单发生在 21 点之后。</div></li><li class='reveal'><div class='t'>最长连续打卡</div><div class='d'>连续 4 天。</div></li></ul></div></div></section><section class='scene' id='ch3' data-title='我的麦麦日常'><div class='scene-inner'><p class='ch-no'>CHAPTER 03</p><h2 class='ch-title'>我的麦麦日常</h2><p class='ch-sub'>多久吃一次、什么时候吃、常点什么</p><div class='card reveal'><h3>消费节奏</h3><div class='stat-grid'><div><b>11.4</b><span>月均单量</span></div><div><b><span class='pv' data-mask='已隐藏'>¥53.6</span></b><span>平均客单价（累计消费）</span></div><div><b>605</b><span>单品总件数</span></div><div><b>6</b><span>涉及品类</span></div></div><p class='muted'>（均为已确认的实际支付金额，金额覆盖 160/160 单）</p></div><div class='card reveal'><h3>出没时段</h3><ul class='bars'><li><div class='bar-head'><span class='n'>清晨</span><span class='v'>14 单</span></div><span class='track'><i class='fill' data-w='26'></i></span></li><li><div class='bar-head'><span class='n'>早餐</span><span class='v'>17 单</span></div><span class='track'><i class='fill' data-w='32'></i></span></li><li><div class='bar-head'><span class='n'>午餐</span><span class='v'>53 单</span></div><span class='track'><i class='fill' data-w='100'></i></span></li><li><div class='bar-head'><span class='n'>下午茶</span><span class='v'>13 单</span></div><span class='track'><i class='fill' data-w='25'></i></span></li><li><div class='bar-head'><span class='n'>晚餐</span><span class='v'>48 单</span></div><span class='track'><i class='fill' data-w='91'></i></span></li><li><div class='bar-head'><span class='n'>夜宵</span><span class='v'>15 单</span></div><span class='track'><i class='fill' data-w='28'></i></span></li></ul></div><div class='card reveal'><h3>一周节奏</h3><ul class='bars'><li><div class='bar-head'><span class='n'>周一</span><span class='v'>31 单</span></div><span class='track'><i class='fill' data-w='100'></i></span></li><li><div class='bar-head'><span class='n'>周二</span><span class='v'>25 单</span></div><span class='track'><i class='fill' data-w='81'></i></span></li><li><div class='bar-head'><span class='n'>周三</span><span class='v'>16 单</span></div><span class='track'><i class='fill' data-w='52'></i></span></li><li><div class='bar-head'><span class='n'>周四</span><span class='v'>22 单</span></div><span class='track'><i class='fill' data-w='71'></i></span></li><li><div class='bar-head'><span class='n'>周五</span><span class='v'>28 单</span></div><span class='track'><i class='fill' data-w='90'></i></span></li><li><div class='bar-head'><span class='n'>周六</span><span class='v'>15 单</span></div><span class='track'><i class='fill' data-w='48'></i></span></li><li><div class='bar-head'><span class='n'>周日</span><span class='v'>23 单</span></div><span class='track'><i class='fill' data-w='74'></i></span></li></ul></div><div class='card reveal'><h3>品类偏好</h3><ul class='bars'><li><div class='bar-head'><span class='n'>小食</span><span class='v'>189 件 · 31.2%</span></div><span class='track'><i class='fill' data-w='100'></i></span></li><li><div class='bar-head'><span class='n'>汉堡</span><span class='v'>150 件 · 24.8%</span></div><span class='track'><i class='fill' data-w='79'></i></span></li><li><div class='bar-head'><span class='n'>甜品</span><span class='v'>92 件 · 15.2%</span></div><span class='track'><i class='fill' data-w='49'></i></span></li><li><div class='bar-head'><span class='n'>饮料</span><span class='v'>85 件 · 14.0%</span></div><span class='track'><i class='fill' data-w='45'></i></span></li><li><div class='bar-head'><span class='n'>早餐</span><span class='v'>51 件 · 8.4%</span></div><span class='track'><i class='fill' data-w='27'></i></span></li><li><div class='bar-head'><span class='n'>沙拉</span><span class='v'>38 件 · 6.3%</span></div><span class='track'><i class='fill' data-w='20'></i></span></li></ul></div><div class='card reveal'><h3>常点单品</h3><div class='pills'><span class='pill'>麦乐鸡（5块） <i>× 39</i></span><span class='pill'>麦辣鸡翅 <i>× 38</i></span><span class='pill'>板烧鸡腿堡 <i>× 38</i></span><span class='pill'>玉米杯 <i>× 38</i></span><span class='pill'>麦旋风 <i>× 38</i></span><span class='pill'>中可乐 <i>× 35</i></span><span class='pill'>麦辣鸡腿堡 <i>× 35</i></span><span class='pill'>中薯条 <i>× 35</i></span><span class='pill'>薯饼 <i>× 32</i></span><span class='pill'>拿铁 <i>× 32</i></span></div></div><div class='card reveal'><h3>黄金搭档</h3><div class='pills'><span class='pill'>板烧鸡腿堡 + 玉米杯 <i>7 次同单</i></span><span class='pill'>板烧鸡腿堡 + 麦辣鸡翅 <i>7 次同单</i></span><span class='pill'>新地 + 麦乐鸡（5块） <i>6 次同单</i></span><span class='pill'>双层吉士汉堡 + 麦辣鸡翅 <i>6 次同单</i></span><span class='pill'>中可乐 + 早餐全餐 <i>6 次同单</i></span></div></div></div></section><section class='scene' id='ch4' data-title='口味人格测试结果'><div class='scene-inner'><p class='ch-no'>CHAPTER 04</p><h2 class='ch-title'>口味人格测试结果</h2><p class='ch-sub'>每条结论都附上可信度与数据依据，可以逐条核对</p><div class='persona-card persona-main reveal'><div class='persona-top'><span class='persona-name'>甜食主义</span><span class='persona-conf'>可信度 95%（高）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='95'></i></span><div class='persona-desc'>甜品占了 15.2%</div><div class='persona-evid'>依据：甜品累计 92 件，占全部单品 15.2%</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>薯条依赖症</span><span class='persona-conf'>可信度 72%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='72'></i></span><div class='persona-desc'>薯条类出现率 14.5%</div><div class='persona-evid'>依据：薯条类累计 88 件，占全部单品 14.5%</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>汉堡原教旨</span><span class='persona-conf'>可信度 69%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='69'></i></span><div class='persona-desc'>汉堡占比 24.8%</div><div class='persona-evid'>依据：汉堡累计 150 件，占全部单品 24.8%</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>嗜辣星人</span><span class='persona-conf'>可信度 60%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='60'></i></span><div class='persona-desc'>12.1% 的单品带「辣」字</div><div class='persona-evid'>依据：共 605 件单品，其中 73 件带「辣」字</div></div><div class='persona-card reveal'><div class='persona-top'><span class='persona-name'>咖啡续命</span><span class='persona-conf'>可信度 59%（中）</span></div><span class='track' style='display:block;margin-top:10px'><i class='fill' data-w='59'></i></span><div class='persona-desc'>咖啡类占比 8.3%</div><div class='persona-evid'>依据：咖啡类累计 50 件，占全部单品 8.3%</div></div><p class='muted reveal'>样本：160 单 / 605 件单品。可信度会随样本量打折，样本越薄折得越狠。</p></div></section><section class='scene' id='ch5' data-title='这一年的变化'><div class='scene-inner'><p class='ch-no'>CHAPTER 05</p><h2 class='ch-title'>这一年的变化</h2><p class='ch-sub'>前半程和后半程各吃了什么，差距一目了然</p><div class='card reveal'><h3>口味变化（品类占比）</h3><p class='muted'>按订单序号对半；前半 80 单（<span class='pv' data-mask='已隐藏'>2025-09-14</span> ~ <span class='pv' data-mask='已隐藏'>2026-03-30</span>），后半 80 单（<span class='pv' data-mask='已隐藏'>2026-04-01</span> ~ <span class='pv' data-mask='已隐藏'>2026-10-14</span>）</p><ul class='shift'><li class='reveal'><div class='shift-head'><b>小食</b><span class='delta up'>+2.3 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='30'></i></span><span>30.0%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='32'></i></span><span>32.3%</span></div></li><li class='reveal'><div class='shift-head'><b>甜品</b><span class='delta down'>-2.0 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='16'></i></span><span>16.3%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='14'></i></span><span>14.3%</span></div></li><li class='reveal'><div class='shift-head'><b>饮料</b><span class='delta down'>-1.5 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='14'></i></span><span>14.8%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='13'></i></span><span>13.4%</span></div></li><li class='reveal'><div class='shift-head'><b>早餐</b><span class='delta up'>+1.2 个百分点</span></div><div class='duo'><span>前</span><span class='track'><i class='fill' data-w='7'></i></span><span>7.8%</span></div><div class='duo'><span>后</span><span class='track'><i class='fill blue' data-w='9'></i></span><span>9.0%</span></div></li></ul></div><div class='card reveal'><h3>月度订单趋势</h3><div class='month-chart'><div title='2025-09：8 单'><i style='height:46px'></i><em>09月</em></div><div title='2025-10：14 单'><i style='height:76px'></i><em>10月</em></div><div title='2025-11：8 单'><i style='height:46px'></i><em>11月</em></div><div title='2025-12：18 单'><i style='height:96px'></i><em>12月</em></div><div title='2026-01：11 单'><i style='height:61px'></i><em>01月</em></div><div title='2026-02：12 单'><i style='height:66px'></i><em>02月</em></div><div title='2026-03：9 单'><i style='height:51px'></i><em>03月</em></div><div title='2026-04：10 单'><i style='height:56px'></i><em>04月</em></div><div title='2026-05：9 单'><i style='height:51px'></i><em>05月</em></div><div title='2026-06：16 单'><i style='height:86px'></i><em>06月</em></div><div title='2026-07：14 单'><i style='height:76px'></i><em>07月</em></div><div title='2026-08：13 单'><i style='height:71px'></i><em>08月</em></div><div title='2026-09：12 单'><i style='height:66px'></i><em>09月</em></div><div title='2026-10：6 单'><i style='height:36px'></i><em>10月</em></div></div><p class='muted'>柱子越高表示当月订单越多，横向可滑动。</p></div><div class='card reveal'><h3>趣味记录</h3><div class='pills'><span class='pill'>记录跨度 396 天</span><span class='pill'>最长连续打卡 4 天</span><span class='pill'>覆盖 14 个月</span><span class='pill'>常去门店 4 家</span></div></div></div></section><section class='scene' id='ch6' data-title='年度终章'><div class='scene-inner'><p class='ch-no'>CHAPTER 06</p><h2 class='ch-title'>年度终章</h2><p class='ch-sub'>年度关键词、下一次尝鲜，以及一张可以放心分享的卡片</p><div class='card reveal'><h3>年度关键词</h3><div class='keywords'><span>#麦乐鸡（5块）<i>全年点了 39 次，年度单品</i></span><span>#小食控<i>小食类一共 189 件</i></span><span>#午餐档<i>53 单发生在这个时段</i></span><span>#甜食主义<i>甜品占了 15.2%</i></span><span>#板烧鸡腿堡+玉米杯<i>这对组合同单出现 7 次</i></span><span>#麦当劳（公司楼下餐厅）<i>去了 43 次，你的主场</i></span></div></div><div class='card reveal'><h3>下次试试</h3><div class='rec reveal'><div class='n'>扭扭薯条</div><div class='r'>「小食」后半程占比上升了 2.3 个百分点；「小食」是你点得最多的品类，这一款还没试过</div></div><div class='rec reveal'><div class='n'>脆香鸡</div><div class='r'>「小食」后半程占比上升了 2.3 个百分点；「小食」是你点得最多的品类，这一款还没试过</div></div><div class='rec reveal'><div class='n'>安格斯MAX厚牛堡</div><div class='r'>你偏爱「汉堡」，这一款还没试过；这个品类你一共在 82 单里点过</div></div><div class='rec reveal'><div class='n'>双层牛柳汉堡</div><div class='r'>你偏爱「汉堡」，这一款还没试过；这个品类你一共在 82 单里点过</div></div><div class='rec reveal'><div class='n'>奶昔</div><div class='r'>你偏爱「甜品」，这一款还没试过</div></div></div><div class='share-panel reveal'><h3 style='font-size:15px;margin-bottom:4px'>生成分享卡片</h3><p class='muted' style='margin-top:0'>竖版 1080×1920，适配常见手机屏幕。下面四项默认关闭；未勾选的字段不会画进图片，也不会写进配置。</p><div class='switches'><label class='sw'><input type='checkbox' id='f-amount'><span>展示消费金额</span><em>默认隐藏</em></label><label class='sw'><input type='checkbox' id='f-store'><span>展示门店名称</span><em>默认隐藏</em></label><label class='sw'><input type='checkbox' id='f-date'><span>展示消费日期</span><em>默认隐藏</em></label><label class='sw'><input type='checkbox' id='f-generated'><span>展示生成时间</span><em>默认隐藏</em></label></div><div class='card-preview'><canvas id='cardCanvas' width='1080' height='1920' aria-label='分享卡片预览'>当前浏览器不支持 Canvas，无法预览与导出分享卡片。</canvas></div><ul class='field-preview' id='fieldPreview'></ul><div class='actions'><button type='button' id='downloadCard'>导出 share-card.png</button><button type='button' id='copyConfig' class='ghost'>复制卡片配置</button></div><pre class='muted' id='configOut' style='white-space:pre-wrap;margin-top:12px'></pre><div class='warn'>卡片由本机 Canvas 绘制并导出，不含位置、账号等元数据；但画面上的文字就是图片的全部内容，公开前仍请自己看一眼。另外：story.html 本身包含完整数据，分享请发 PNG，不要直接转发这个 HTML 文件。</div></div><div class='card reveal'><h3>数据说明（与卡片同源）</h3><ul class='field-preview'><li><span>数据来源   示例数据 · 虚构生成，非真实订单</span></li><li><span>统计区间   <span class='pv' data-mask='已隐藏'>2025-09-14</span>  ~  <span class='pv' data-mask='已隐藏'>2026-10-14</span></span></li><li><span>订单覆盖   160 单（原始 160 条，去重 0 条，翻页 1 页）</span></li><li><span>字段完整   有日期 160/160，有金额 160/160，有明细 160/160</span></li><li><span>覆盖范围   示例数据由程序生成，仅用于演示输出效果</span></li><li><span>提示       本报告的订单由程序生成，不来自任何真实账号，仅用于演示输出效果</span></li><li><span>提示       运行 `mcdtm fetch` 可替换为你的真实订单数据</span></li></ul></div></div></section><footer class='foot'><p>本页订单由程序生成，不来自任何真实账号。</p><p>统计范围与缺失情况见第 6 章「数据说明」；餐品信息、价格与营养数据以麦当劳官方渠道实时结果为准，本工具不构成营养或医疗建议。</p><p>麦麦时光机是麦当劳程序员创意开发大赛参赛作品，由参赛者独立开发，非麦当劳官方产品。　<a href='report.html'>查看完整数据报告</a>　<a href='story-public.html'>公开分享版长什么样</a></p></footer>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script id="story-data" type="application/json">{"version": "2.0.0", "title": "麦麦时光机 · 我的年度回忆", "persona": "甜食主义", "persona_desc": "甜品占了 15.2%", "keywords": ["麦乐鸡（5块）", "小食控", "午餐档"], "source_label": "示例数据 · 虚构生成，非真实订单", "is_demo": true, "privacy_mode": "personal", "redacted": false, "range_text": "2025-09-14 ~ 2026-10-14", "generated_at": "2026-10-16 20:29", "privacy": {"amount": false, "store": false, "date": false, "generated": false}, "fields": {"amount": {"label": "消费金额", "value": "累计消费 ¥8,580.00", "hidden_text": "已隐藏", "available": true}, "store": {"label": "门店名称", "value": "麦当劳（公司楼下餐厅） · 43 次", "hidden_text": "已隐藏", "available": true}, "date": {"label": "消费日期", "value": "2025-09-14 ~ 2026-10-14", "hidden_text": "已隐藏", "available": true}, "generated": {"label": "生成时间", "value": "2026-10-16 20:29", "hidden_text": "已隐藏", "available": true}}}</script>
+<script>
+/* 麦麦时光机 · 故事页交互（V2.0）
+ *
+ * 原则：
+ * 1. 无脚本可用时，页面内容依然完整（章节由 Python 直接渲染，JS 只做增强）。
+ * 2. 不请求网络、不引用外部库；所有行为失败都静默降级，不抛错打断阅读。
+ * 3. 分享卡片在本地 Canvas 绘制并导出 PNG，不写入任何元数据，
+ *    导出内容只包含用户主动勾选的字段。
+ */
+(function () {
+  "use strict";
+
+  var doc = document;
+  var root = doc.documentElement;
+
+  function $(id) { return doc.getElementById(id); }
+  function safe(fn) { try { fn(); } catch (e) { /* 增强功能失败不影响阅读 */ } }
+
+  // 统一用 textContent 建节点：订单里的商品名等动态文本一律按纯文本处理，
+  // 绝不被当作 HTML 解析（不使用 innerHTML 拼接）
+  function el(tag, text) {
+    var node = doc.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+  function reduceMotion() {
+    try {
+      return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    } catch (e) { return false; }
+  }
+
+  // ------------------------------------------------------------ 数据
+  var DATA = {};
+  safe(function () {
+    DATA = JSON.parse(($("story-data") || {}).textContent || "{}");
+  });
+
+  var CARD_W = 1080;
+  var CARD_H = 1920;
+
+  // ------------------------------------------------------------ 滚动渐显
+  // 只有 JS 跑起来了才给 <html> 加 .js，配合 CSS 保证动画失效时内容仍可见
+  function initReveal() {
+    var items = doc.querySelectorAll(".reveal");
+    if (!items.length) return;
+
+    if (reduceMotion() || !("IntersectionObserver" in window)) {
+      for (var i = 0; i < items.length; i++) items[i].classList.add("is-visible");
+      root.classList.remove("js"); // 不做渐显，直接呈现
+      return;
+    }
+
+    root.classList.add("js");
+    var observer = new IntersectionObserver(function (entries) {
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].isIntersecting) {
+          entries[i].target.classList.add("is-visible");
+          observer.unobserve(entries[i].target);
+        }
+      }
+    }, { threshold: 0.14, rootMargin: "0px 0px -8% 0px" });
+
+    for (var j = 0; j < items.length; j++) observer.observe(items[j]);
+  }
+
+  // ------------------------------------------------------------ 进度条与章节圆点
+  function initNav() {
+    var scenes = doc.querySelectorAll(".scene[id]");
+    if (!scenes.length) return;
+    var bar = $("progressBar");
+    var dotsBox = $("dots");
+    var links = [];
+
+    if (dotsBox) {
+      for (var i = 0; i < scenes.length; i++) {
+        var scene = scenes[i];
+        var a = doc.createElement("a");
+        a.href = "#" + scene.id;
+        a.setAttribute("aria-label", "第 " + (i + 1) + " 章 " + (scene.getAttribute("data-title") || ""));
+        var tip = doc.createElement("span");
+        tip.textContent = (i + 1) + " " + (scene.getAttribute("data-title") || "章节");
+        a.appendChild(tip);
+        dotsBox.appendChild(a);
+        links.push(a);
+      }
+    }
+
+    var ticking = false;
+    function update() {
+      ticking = false;
+      var scrollTop = window.pageYOffset || doc.body.scrollTop || 0;
+      var height = (doc.body.scrollHeight || 0) - window.innerHeight;
+      if (bar) {
+        bar.style.width = (height > 0 ? Math.min(100, Math.max(0, scrollTop / height * 100)) : 0) + "%";
+      }
+      var mid = scrollTop + window.innerHeight * 0.45;
+      var activeIdx = 0;
+      for (var k = 0; k < scenes.length; k++) {
+        if (scenes[k].offsetTop <= mid) activeIdx = k;
+      }
+      for (var m = 0; m < links.length; m++) {
+        if (m === activeIdx) links[m].classList.add("active");
+        else links[m].classList.remove("active");
+      }
+    }
+    function onScroll() {
+      if (!ticking) {
+        ticking = true;
+        window.requestAnimationFrame(update);
+      }
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
+    update();
+  }
+
+  // ------------------------------------------------------------ 隐私浏览（整页打码）
+  function initPrivacy() {
+    var btn = $("privToggle");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var on = btn.getAttribute("aria-pressed") === "true";
+      on = !on;
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+      btn.textContent = on ? "隐私浏览：开（已打码）" : "隐私浏览：关";
+      if (on) root.classList.add("story-privacy");
+      else root.classList.remove("story-privacy");
+    });
+  }
+
+  // ------------------------------------------------------------ 条形图入场
+  function initBars() {
+    var fills = doc.querySelectorAll(".fill[data-w]");
+    if (!fills.length) return;
+    if (!("IntersectionObserver" in window) || reduceMotion()) {
+      for (var i = 0; i < fills.length; i++) {
+        fills[i].style.width = fills[i].getAttribute("data-w") + "%";
+      }
+      return;
+    }
+    var ob = new IntersectionObserver(function (entries) {
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].isIntersecting) {
+          entries[i].target.style.width = entries[i].target.getAttribute("data-w") + "%";
+          ob.unobserve(entries[i].target);
+        }
+      }
+    }, { threshold: 0.25 });
+    for (var j = 0; j < fills.length; j++) ob.observe(fills[j]);
+  }
+
+  // ------------------------------------------------------------ 分享卡片绘制
+  function font(size, weight) {
+    return (weight || 400) + " " + size + 'px -apple-system, BlinkMacSystemFont, "PingFang SC",' +
+      ' "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
+  }
+
+  /* 卡片内边距固定 84px，所有可绘制内容的硬边界都在这个区间内 */
+  var PAD = 84;
+  var INNER = CARD_W - PAD * 2;      // 912
+  var FOOT_TOP = CARD_H - 260;       // 页脚上沿，正文块不得越过
+
+  /* Emoji / 组合字符按「一个字素」取值：直接按 UTF-16 码元切片会把代理对劈成
+   * 半个字符（画出来是方框），也会把 👨‍👩‍👧‍👦 这类 ZWJ 组合拆散。
+   * 这里只做最小必要处理：整码点 + 变体选择符 + ZWJ 串联 + 组合附加符号。 */
+  var ZWJ_CH = "\u200d";
+  var VS_RE = /[\uFE00-\uFE0F\u20E3\u0300-\u036f]/;
+
+  function codePointAt(s, i) {
+    var code = s.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < s.length) return s.substr(i, 2);
+    return s.charAt(i);
+  }
+
+  function graphemeAt(s, i) {
+    var out = codePointAt(s, i);
+    var j = i + out.length;
+    while (j < s.length) {
+      var ch = codePointAt(s, j);
+      if (ch !== ZWJ_CH && !VS_RE.test(ch)) break;
+      out += ch;
+      j += ch.length;
+      if (ch === ZWJ_CH && j < s.length) {   // ZWJ 后面跟的那个码点属于同一字素
+        var next = codePointAt(s, j);
+        out += next;
+        j += next.length;
+      }
+    }
+    return out;
+  }
+
+  /* 单行截断：超出 maxWidth 时逐字回退并补省略号。
+   * 商品名 / 门店名长度不可控，直接 fillText 会溢出画布或压到相邻元素上。 */
+  function clip(ctx, text, maxWidth) {
+    var s = String(text == null ? "" : text);
+    if (!s || maxWidth <= 0) return "";
+    if (ctx.measureText(s).width <= maxWidth) return s;
+    var ell = "…";
+    var ellW = ctx.measureText(ell).width;
+    var out = "";
+    for (var i = 0; i < s.length;) {
+      var ch = graphemeAt(s, i);
+      var next = out + ch;
+      i += ch.length;
+      if (ctx.measureText(next).width + ellW > maxWidth) break;
+      out = next;
+    }
+    return out ? out + ell : "";
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    var rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.lineTo(x + w - rr, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+    ctx.lineTo(x + w, y + h - rr);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+    ctx.lineTo(x + rr, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+    ctx.lineTo(x, y + rr);
+    ctx.quadraticCurveTo(x, y, x + rr, y);
+    ctx.closePath();
+  }
+
+  /* 中英混排换行：CJK 逐字断行，连续 ASCII 视为整体，避免单词被劈开；
+   * Emoji 按字素断行，不会把代理对或 ZWJ 组合拆散。
+   * 超出 maxLines 时末行补省略号——宁可明示截断，也不静默吞掉内容。 */
+  function wrap(ctx, text, maxWidth, maxLines) {
+    var lines = [];
+    var line = "";
+    var s = String(text == null ? "" : text);
+    for (var i = 0; i < s.length;) {
+      var ch = graphemeAt(s, i);
+      i += ch.length;
+      if (ctx.measureText(line + ch).width <= maxWidth || line === "") {
+        line += ch;
+      } else {
+        lines.push(line);
+        line = ch;
+      }
+    }
+    if (line) lines.push(line);
+    if (maxLines && lines.length > maxLines) {
+      var kept = lines.slice(0, maxLines);
+      var last = kept[maxLines - 1];
+      kept[maxLines - 1] = clip(ctx, last + "…", maxWidth) || last;
+      return kept;
+    }
+    return lines;
+  }
+
+  /* 关键词胶囊：单个词先按可用宽度截断，再据此算胶囊宽度，
+   * 保证任何长度都不会顶出卡片左右边界。 */
+  function chip(ctx, text, x, y, padX, height, maxWidth) {
+    ctx.font = font(34, 600);
+    var label = clip(ctx, text, Math.max(0, (maxWidth || INNER) - padX * 2));
+    var w = ctx.measureText(label).width + padX * 2;
+    ctx.fillStyle = "rgba(255,255,255,.16)";
+    roundRect(ctx, x, y, w, height, height / 2);
+    ctx.fill();
+    ctx.fillStyle = "#FFFFFF";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, x + padX, y + height / 2 + 1);
+    ctx.textBaseline = "alphabetic";
+    return w;
+  }
+
+  function drawCard(canvas, cfg) {
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.width = CARD_W;
+    canvas.height = CARD_H;
+
+    var g = ctx.createLinearGradient(0, 0, CARD_W, CARD_H);
+    g.addColorStop(0, "#DA291C");
+    g.addColorStop(1, "#93150C");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, CARD_W, CARD_H);
+
+    ctx.fillStyle = "rgba(255,199,44,.22)";
+    ctx.beginPath();
+    ctx.arc(CARD_W - 90, 120, 300, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(60, CARD_H - 140, 220, 0, Math.PI * 2);
+    ctx.fill();
+
+    var white = "#FFFFFF";
+    var soft = "rgba(255,255,255,.78)";
+
+    // 头部
+    ctx.fillStyle = soft;
+    ctx.font = font(34, 500);
+    ctx.fillText("麦麦时光机 · 我的年度回忆", PAD, 168);
+
+    ctx.fillStyle = white;
+    ctx.font = font(78, 800);
+    ctx.fillText("我的年度回忆", PAD, 272);
+
+    ctx.fillStyle = "rgba(255,255,255,.30)";
+    ctx.fillRect(PAD, 312, 300, 4);
+
+    /* 版式预算：人格面板 / 年度关键词 / 字段面板自上而下一次性分配。
+     *
+     * 旧实现把人格面板写死成 470 高、字段面板位置只按关键词首行推算，
+     * 结果「人格名占两行 + 描述占三行」时描述会落到面板外面（实测第 3 行
+     * 在 y869~902，而面板底边是 y856）。这里改成先量后放：
+     * 关键词先排版拿真实行数，再把人脸面板描述的行数按剩余空间自动裁剪，
+     * 除非最终无条件越出 FOOT_TOP。 */
+    var words = cfg.keywords && cfg.keywords.length ? cfg.keywords : ["还在探索中"];
+    var rows = cfg.rows || [];
+    var BODY_TOP = 386;
+    var GAP_TITLE = 94;      // 人格面板底 → 关键词标题基线
+    var GAP_CHIP = 50;       // 关键词标题基线 → 首颗胶囊顶
+    var GAP_ROWS = 26;       // 胶囊块底 → 字段面板顶
+    var CHIP_H = 68;
+    var CHIP_STEP = 84;
+    var ROW_STEP = 78;
+    var PERSONA_MIN_H = 470; // 常规数据下的观感高度，放得下就取它
+
+    // 1) 关键词先排版（只测量、不绘制）：拿到真实行数，才算得准它占掉多少高度
+    ctx.font = font(34, 600);
+    var chips = [];
+    var kx = PAD;
+    var chipRow = 0;
+    for (var w = 0; w < words.length && w < 4; w++) {
+      var word = String(words[w]);
+      var need = ctx.measureText(clip(ctx, word, INNER - 56)).width + 56;
+      if (kx + need > CARD_W - PAD) { kx = PAD; chipRow += 1; }
+      chips.push({ text: word, x: kx, row: chipRow });
+      kx += need + 18;
+    }
+    var chipsH = chipRow * CHIP_STEP + CHIP_H;
+    var rowsH = ROW_STEP * rows.length + 74;
+
+    // 2) 剩下的高度留给人格面板
+    var budget = FOOT_TOP - BODY_TOP - GAP_TITLE - GAP_CHIP - GAP_ROWS - chipsH - rowsH;
+    ctx.font = font(86, 800);
+    var personaLines = wrap(ctx, cfg.persona, INNER - 96, 2);
+    var nameBlock = 216 + personaLines.length * 100;   // 面板顶 → 描述首行基线
+    var maxDesc = 3;
+    var descLines = [];
+    var contentNeed = 0;
+    for (;;) {
+      descLines = maxDesc > 0 ? wrap(ctx, cfg.personaDesc, INNER - 96, maxDesc) : [];
+      contentNeed = nameBlock + descLines.length * 48 + 40;
+      if (contentNeed <= budget || maxDesc === 0) break;
+      maxDesc -= 1;
+    }
+    if (contentNeed > budget) {
+      // 连一行名字都放不下：人格名退回一行、描述让位（名字比描述重要）
+      personaLines = wrap(ctx, cfg.persona, INNER - 96, 1);
+      nameBlock = 216 + personaLines.length * 100;
+      descLines = [];
+      contentNeed = nameBlock + 40;
+    }
+    var personaH = Math.max(contentNeed, Math.min(PERSONA_MIN_H, budget));
+    personaH = Math.min(personaH, budget);   // 任何情况下都不越过 FOOT_TOP
+
+    var titleY = BODY_TOP + personaH + GAP_TITLE;
+    var chipTop = titleY + GAP_CHIP;
+    var rowsTop = chipTop + chipsH + GAP_ROWS;
+
+    // 3) 口味人格
+    ctx.fillStyle = "rgba(255,255,255,.12)";
+    roundRect(ctx, PAD, BODY_TOP, INNER, personaH, 36);
+    ctx.fill();
+
+    ctx.fillStyle = soft;
+    ctx.font = font(32, 500);
+    ctx.fillText("我的口味人格", 132, BODY_TOP + 78);
+
+    ctx.fillStyle = "#FFC72C";
+    ctx.font = font(86, 800);
+    for (var i = 0; i < personaLines.length; i++) {
+      ctx.fillText(personaLines[i], 132, BODY_TOP + 186 + i * 100);
+    }
+
+    var descTop = BODY_TOP + 186 + personaLines.length * 100 + 30;
+    if (descLines.length) {
+      ctx.fillStyle = "rgba(255,255,255,.90)";
+      ctx.font = font(34, 400);
+      for (var j = 0; j < descLines.length; j++) {
+        ctx.fillText(descLines[j], 132, descTop + j * 48);
+      }
+    }
+
+    // 4) 年度关键词
+    ctx.fillStyle = soft;
+    ctx.font = font(32, 500);
+    ctx.fillText("年度关键词", PAD, titleY);
+    for (var c = 0; c < chips.length; c++) {
+      chip(ctx, chips[c].text, chips[c].x, chipTop + chips[c].row * CHIP_STEP,
+        28, CHIP_H, INNER);
+    }
+
+    /* 测试钩子：只暴露几何，不含任何原文。
+     * jsdom 与浏览器验收据此断言「描述没跑出面板 / 胶囊没压到字段面板 / 字段面板没越过页脚」。 */
+    if (typeof window !== "undefined") {
+      window.__mcdCardLayout = {
+        personaPanel: { top: BODY_TOP, bottom: BODY_TOP + personaH },
+        personaNameLines: personaLines.length,
+        descLines: descLines.length,
+        descBottom: descLines.length
+          ? descTop + (descLines.length - 1) * 48 + 12 : null,
+        chipRows: chipRow + 1,
+        chipsBottom: chipTop + chipsH,
+        rowsPanel: { top: rowsTop, bottom: rowsTop + rowsH },
+        footTop: FOOT_TOP
+      };
+    }
+
+    // 5) 字段行（只包含勾选的字段；未勾选显示「已隐藏」）
+    var ry = rowsTop + 56;
+    ctx.fillStyle = "rgba(255,255,255,.14)";
+    roundRect(ctx, PAD, rowsTop, INNER, rowsH, 32);
+    ctx.fill();
+
+    ctx.textBaseline = "alphabetic";
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r];
+      var y = ry + r * ROW_STEP;
+      ctx.fillStyle = soft;
+      ctx.font = font(32, 500);
+      ctx.fillText(row.label, 132, y);
+      var labelW = ctx.measureText(row.label).width;
+
+      ctx.textAlign = "right";
+      ctx.font = row.hidden ? font(32, 500) : font(34, 700);
+      ctx.fillStyle = row.hidden ? "rgba(255,255,255,.55)" : white;
+      // 值右对齐绘制：先按「不与左侧标签重叠」算出可用宽度再截断
+      var avail = CARD_W - 132 - (132 + labelW) - 32;
+      ctx.fillText(clip(ctx, row.text, avail), CARD_W - 132, y);
+      ctx.textAlign = "left";
+    }
+
+    // 页脚
+    ctx.fillStyle = "rgba(255,255,255,.72)";
+    ctx.font = font(28, 400);
+    ctx.fillText(clip(ctx, cfg.sourceLabel, INNER), PAD, CARD_H - 168);
+    ctx.fillStyle = "rgba(255,255,255,.52)";
+    ctx.font = font(24, 400);
+    // 生成时间默认隐藏：只有用户主动勾选「生成时间」才在图上出现
+    var genRow = null;
+    for (var k = 0; k < rows.length; k++) {
+      if (rows[k].key === "generated") genRow = rows[k];
+    }
+    var genShown = !!(genRow && !genRow.hidden && genRow.available !== false);
+    var footLine = (genShown ? "生成于 " + (genRow.text || "—") + " · " : "") +
+      "仅包含你勾选的字段";
+    ctx.fillText(clip(ctx, footLine, INNER), PAD, CARD_H - 122);
+    ctx.fillText(clip(ctx, "麦麦时光机 · 大赛参赛作品 · 非麦当劳官方产品", INNER),
+      PAD, CARD_H - 80);
+  }
+
+  // ------------------------------------------------------------ 分享面板逻辑
+  function initShare() {
+    var canvas = $("cardCanvas");
+    if (!canvas) return;
+    var fields = (DATA.fields || {});
+    var order = ["amount", "store", "date", "generated"];
+    var toggles = {};
+    var previewList = $("fieldPreview");
+    var configOut = $("configOut");
+
+    function rowOf(key) {
+      var f = fields[key] || { label: key, value: "—", hidden_text: "已隐藏" };
+      // 公开分享版：值根本没写进文件，只能显示占位符（勾选也没用）
+      if (f.available === false) {
+        return { key: key, label: f.label, hidden: false, available: false,
+                 text: f.value || "公开版未写入" };
+      }
+      var on = !!(toggles[key] && toggles[key].checked);
+      // 值为空或只有空白时不要画出一行空白（真实数据里 generated 可能是空串）
+      var value = f.value === undefined || f.value === null ? "" : String(f.value);
+      var shown = value.trim() ? value : "—";
+      return {
+        key: key,
+        label: f.label,
+        hidden: !on,
+        available: true,
+        text: on ? shown : (f.hidden_text || "已隐藏")
+      };
+    }
+
+    // 预览行 <li><b>标签</b><span>值</span></li>，标签与值都走 textContent
+    function previewRow(label, text) {
+      var li = el("li");
+      li.appendChild(el("b", label));
+      if (text !== undefined && text !== null && text !== "") {
+        li.appendChild(el("span", text));
+      }
+      return li;
+    }
+
+    function currentRows() {
+      var rows = [];
+      for (var i = 0; i < order.length; i++) {
+        if (fields[order[i]]) rows.push(rowOf(order[i]));
+      }
+      return rows;
+    }
+
+    function refresh() {
+      var rows = currentRows();
+      var cfg = {
+        persona: DATA.persona || "口味待探索",
+        personaDesc: DATA.persona_desc || "",
+        keywords: DATA.keywords || [],
+        rows: rows,
+        sourceLabel: DATA.source_label || "来源未知",
+        generatedAt: DATA.generated_at || ""
+      };
+      drawCard(canvas, cfg);
+
+      if (previewList) {
+        previewList.textContent = "";
+        previewList.appendChild(previewRow("麦麦时光机 · 我的年度回忆", null));
+        previewList.appendChild(previewRow("我的口味人格", cfg.persona));
+        previewList.appendChild(
+          previewRow("年度关键词", (DATA.keywords || []).join("、") || "—")
+        );
+        for (var i = 0; i < rows.length; i++) {
+          previewList.appendChild(previewRow(rows[i].label, rows[i].text));
+        }
+      }
+
+      if (configOut) {
+        configOut.textContent = buildConfigText(cfg, rows);
+      }
+    }
+
+    function buildConfigText(cfg, rows) {
+      var lines = [
+        "麦麦时光机 · 我的年度回忆",
+        "我的口味人格：" + cfg.persona,
+        "年度关键词：" + ((DATA.keywords || []).join("、") || "—")
+      ];
+      for (var i = 0; i < rows.length; i++) {
+        lines.push(rows[i].label + "：" + rows[i].text);
+      }
+      lines.push("导出配置：" + JSON.stringify({
+        amount: rows.some(function (r) { return r.key === "amount" && !r.hidden; }),
+        store: rows.some(function (r) { return r.key === "store" && !r.hidden; }),
+        date: rows.some(function (r) { return r.key === "date" && !r.hidden; }),
+        generated: rows.some(function (r) { return r.key === "generated" && !r.hidden; })
+      }));
+      if (DATA.redacted) {
+        lines.push("生成模式：公开分享版（金额 / 门店名称 / 到日日期未写入本文件）");
+      }
+      return lines.join("\n");
+    }
+
+    for (var j = 0; j < order.length; j++) {
+      // 注意：变量名不能叫 el —— var 是函数级提升，会遮蔽上面的 el() 建节点助手
+      var box = $("f-" + order[j]);
+      if (!box) continue;
+      toggles[order[j]] = box;
+      box.addEventListener("change", refresh);
+      // 与 Python 侧默认保持一致：未勾选即隐藏
+      box.checked = !!(DATA.privacy && DATA.privacy[order[j]]);
+    }
+
+    var toast = $("toast");
+    function say(msg) {
+      if (!toast) return;
+      toast.textContent = msg;
+      toast.classList.add("show");
+      window.setTimeout(function () { toast.classList.remove("show"); }, 2400);
+    }
+
+    var dl = $("downloadCard");
+    if (dl) {
+      dl.addEventListener("click", function () {
+        var name = "share-card.png";
+        function trigger(href, revoke) {
+          var a = doc.createElement("a");
+          a.href = href;
+          a.download = name;
+          doc.body.appendChild(a);
+          a.click();
+          doc.body.removeChild(a);
+          if (revoke) window.setTimeout(function () { window.URL.revokeObjectURL(href); }, 4000);
+        }
+        try {
+          if (canvas.toBlob) {
+            canvas.toBlob(function (blob) {
+              if (!blob) { say("导出失败，请改用截图"); return; }
+              trigger(window.URL.createObjectURL(blob), true);
+              say("已导出 share-card.png（1080×1920，不含元数据）");
+            }, "image/png");
+          } else {
+            trigger(canvas.toDataURL("image/png"), false);
+            say("已导出 share-card.png");
+          }
+        } catch (e) {
+          say("当前浏览器不支持导出，可用长按/截图保存");
+        }
+      });
+    }
+
+    var copyBtn = $("copyConfig");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", function () {
+        var text = (configOut && configOut.textContent) || buildConfigText({}, currentRows());
+        function fallback() {
+          try {
+            var ta = doc.createElement("textarea");
+            ta.value = text;
+            ta.style.position = "fixed";
+            ta.style.left = "-9999px";
+            doc.body.appendChild(ta);
+            ta.select();
+            doc.execCommand("copy");
+            doc.body.removeChild(ta);
+            say("卡片配置已复制到剪贴板");
+          } catch (e) {
+            say("复制失败，请手动选择下方文本");
+          }
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () {
+            say("卡片配置已复制到剪贴板");
+          })["catch"](fallback);
+        } else {
+          fallback();
+        }
+      });
+    }
+
+    refresh();
+  }
+
+  // ------------------------------------------------------------ 启动
+  function boot() {
+    initReveal();
+    initNav();
+    initPrivacy();
+    initBars();
+    initShare();
+  }
+
+  if (doc.readyState === "loading") {
+    doc.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+})();
+
+</script>
+</body>
+</html>

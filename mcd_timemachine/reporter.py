@@ -602,7 +602,16 @@ def render_html(profile: Dict[str, Any]) -> str:
 
 # ---------------------------------------------------------------- 落盘
 
-def write_reports(profile: Dict[str, Any], out_dir: Path) -> Dict[str, Path]:
+def write_reports(profile: Dict[str, Any], out_dir: Path,
+                  privacy: str = "personal") -> Dict[str, Path]:
+    """落盘三份同源产物：完整报告（md/html）+ 结构化数据，另有沉浸式故事页。
+
+    report.html 保留为「完整、可核对」的静态报告；story.html 是 V2.0 新增的
+    六章节滚动故事，两者并存，互不替代。
+
+    `privacy="public"` 时故事页产为公开分享版（金额 / 门店名 / 到日日期在生成期即从 HTML 移除）；
+    report.md / report.html / profile.json 始终是完整报告，不受该参数影响。
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     md_path = out_dir / "report.md"
     html_path = out_dir / "report.html"
@@ -610,7 +619,23 @@ def write_reports(profile: Dict[str, Any], out_dir: Path) -> Dict[str, Path]:
     md_path.write_text(render_markdown(profile), encoding="utf-8")
     html_path.write_text(render_html(profile), encoding="utf-8")
     json_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {"md": md_path, "html": html_path, "json": json_path}
+
+    paths = {"md": md_path, "html": html_path, "json": json_path}
+    # 故事页依赖可选资源，失败时不影响既有报告的产出。
+    # 但「脱敏自检未通过 / 公开版内容不完整」是**必须让人看见的失败**：
+    # 一旦被这里的兜底吞掉，用户只会看到「报告已生成」，
+    # 却不知道公开版压根没产出（fail-closed 最怕的失效方式就是静默）。
+    try:
+        from .story import PublicContentError, PrivacyLeakError, write_story
+    except Exception:  # pragma: no cover - 仅资源缺失等异常场景
+        return paths
+    try:
+        paths["story"] = write_story(profile, out_dir, privacy)
+    except (PrivacyLeakError, PublicContentError):
+        raise
+    except Exception:  # pragma: no cover - 仅资源缺失等异常场景
+        pass
+    return paths
 
 
 __all__ = ["print_console", "render_markdown", "render_html", "write_reports"]

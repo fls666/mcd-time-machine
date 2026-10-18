@@ -52,6 +52,11 @@
 | 16 | 刷新示例预览，补齐回归测试 | `docs/preview.html`、`tests/`（87 条） |
 | 17 | **按第三轮源码审查修复 P0/P1/P2** | 见第七节 |
 | 18 | **按第四轮源码审查修复 P1/P2** | 见第八节 |
+| 19 | 第五轮审查后升级 V2.0 展示层（六章节故事页 + 分享卡片） | 分支 `feature/v2-story`，见第九节 |
+| 20 | 按第六轮源码审查修复 P1/P2，并完成浏览器视觉验收 | 见第十节 |
+| 21 | **按第七轮源码审查加固公开版脱敏（结构化）并补极端字符验收** | 见第十一节 |
+| 22 | **按第八轮源码审查把公开版改为 fail-closed，并补内容完整性检查与 WebKit 双引擎验收** | 见第十二节 |
+| 23 | 修复 CI 上暴露的 WebKit 间歇失败：加 GitHub Actions 注解便于远程诊断，并用 `demo --as-of` 钉死示例数据基准日期 | 见第十二节 |
 
 ## 四、可复核的运行证据
 
@@ -63,7 +68,7 @@
 $ python -m unittest discover -s tests
 .......................................................................................
 ----------------------------------------------------------------------
-Ran 108 tests in 0.44s
+Ran 239 tests in 7.2s
 
 OK
 ```
@@ -77,6 +82,7 @@ OK
 | 分析 | 空数据、边界日期、连续打卡、口味变化区间划分、**实付/估算金额不混算**、无实付时回退估算、缺金额计数、未标注口径、**标签可信度 0–100 与排序**、不硬凑标签、数据量不足显示探索中、回忆文案命名 |
 | 报告 | HTML 转义与标签闭合、Demo 标识、覆盖范围与金额口径展示 |
 | 脱敏 | 值不回流、标点与分隔符不保留、手机号/邮箱/URL/身份证/长串凭证扫描、真实泄露场景端到端 |
+| 故事页 | 六章结构、离线无外链、动效降级、隐私默认值、JSON 转义、注入回归（恶意商品名 / 门店名 / 特殊字符 / 中文长文本）、属性转义、变量遮蔽护栏、**公开分享版生成期脱敏（三层 + fail-closed）**、**脱敏边界用例**（小数金额 / 中文地址 / 英文与斜杠日期 / 异常字段名 / 嵌套数据）、**公开版内容完整性检查**（章节、计数、条形行、胶囊数、月柱数、门店家数逐项对齐）、生成时间默认隐藏、卡片宽度约束、**浏览器验收脚本的引擎与视口参数化** |
 
 ### 2. 示例数据全链路冒烟
 
@@ -106,7 +112,71 @@ $ python -m compileall -q mcd_timemachine scripts
 （无输出，退出码 0）
 ```
 
-### 4. 提交记录（与上文各步骤一一对应）
+### 4. 前端验收（故事页）
+
+需要 Node（测试专用依赖，运行期零依赖不受影响）：
+
+```
+# 4.1 jsdom 冒烟：真跑页面脚本，五条路径共 135 项断言
+$ npm install jsdom
+$ node scripts/smoke_story.js build/story.html build/public-story.html
+...
+PASS  [恶意] 人格描述没有跑出人格面板  -> descBottom=null panelBottom=856
+PASS  [恶意] 关键词胶囊块没有压到字段面板  -> chipsBottom=1236 rowsTop=1262
+PASS  [恶意] 字段面板没有越过页脚上沿  -> rowsBottom=1648 footTop=1660
+PASS  [极端] 空关键词回落到「还在探索中」
+PASS  [极端] 空字符串人格名回落到「口味待探索」  -> 行数=1
+PASS  [极端] 超长英文（无空格）被截断
+PASS  [极端] Emoji 串被截断
+PASS  [极端] 中英混排被截断
+PASS  [极端] 没有把 Emoji 劈成孤立代理对
+PASS  [极端] 空白值回落到「—」而不是画空行
+PASS  [公开版] 六章结构与个人版逐项一致（没有脱过头）
+PASS  [公开版] 月度趋势仍保留「年-月」粒度  -> 公开=15 个人=15
+全部通过
+
+# 4.2 真实浏览器验收：双引擎，每个引擎各 53 项断言
+#     Chromium 375×812（对标 Android Chrome）/ WebKit 390×844（对标 iPhone Safari）
+$ npm install playwright && npx playwright install chromium webkit
+
+$ node scripts/browser_check.js build/story.html build/public-story.html \
+    --engine=chromium --viewport=375x812 --keep-png artifacts
+PASS  [375px] 页面滚动宽度未超出视口  -> scrollWidth=375 innerWidth=375
+PASS  [章节] 第 2 章 8 个渐显元素滚入后都完整显现
+...
+PASS  [导出] 尺寸 1080x1920  -> {"width":1080,"height":1920}
+PASS  [导出] PNG 不含元数据块
+PASS  [极端 375px] 没有元素越出左右边界
+PASS  [极端] 导出仍是 1080x1920  -> {"width":1080,"height":1920}
+全部通过
+
+$ node scripts/browser_check.js build/story.html build/public-story.html \
+    --engine=webkit --viewport=390x844 --keep-png artifacts
+PASS  [webkit] [390px] 页面滚动宽度未超出视口  -> scrollWidth=390 innerWidth=390
+PASS  [webkit] [章节] 第 2 章 8 个渐显元素滚入后都完整显现
+...
+PASS  [webkit] [导出] 尺寸 1080x1920  -> {"width":1080,"height":1920}
+PASS  [webkit] [页面] 没有脚本错误
+全部通过
+```
+
+两个引擎的 PNG 导出会分目录落到 `artifacts/chromium/` 与 `artifacts/webkit/`，不会互相覆盖。
+WebKit 的 PNG 体积明显小于 Chromium（1080×1920 同尺寸下约 169KB vs 1602KB），
+原因是它默认采用调色板 / 更低色深的编码（PNG chunk 里多出 `sRGB`/`sBIT`），
+像素尺寸与画面内容一致 —— `docs/sample-share-card-webkit.png` 可目视对照。
+
+其中 `build/public-story.html` 由 `python -m mcd_timemachine story --out build --privacy public`
+先生成，再复制出来，用于比对公开分享版。
+
+`artifacts/` 下的 PNG 就是导出的实物；仓库里保留五张作为证据：
+`docs/sample-share-card.png`（默认四项隐藏）、
+`docs/sample-share-card-longtext.png`（超长文本被截断）、
+`docs/sample-share-card-public.png`（公开分享版）、
+`docs/sample-share-card-extreme.png`（极端字符：超长英文 / Emoji / 中英混排 / 空白值，四项全开）、
+`docs/sample-share-card-webkit.png`（同一页面在 WebKit 引擎下的导出，覆盖 Safari / iOS ——
+体积小于 Chromium 版是其编码策略差异，尺寸与内容一致）。
+
+### 5. 提交记录（与上文各步骤一一对应）
 
 | commit | 说明 |
 | --- | --- |
@@ -116,17 +186,28 @@ $ python -m compileall -q mcd_timemachine scripts
 | `cf906d5` | docs: workbuddy.md 补充可复核的运行证据与审查修复对照 |
 | `45270d5` | feat: 新增 Windows 联调教程、一键向导与脱敏导出 share 命令 |
 | `e149d61` | fix: 修 Pages 失败、加固脱敏、按 schema 分页、区分金额口径 |
+| `dfaa3ef` | fix: 小样本标签保护、可信度与支撑量、金额标题随口径、口味分组、推荐归一化 |
+| `b711142` | feat: V2.0 六章节沉浸式故事页 + 隐私友好竖版分享卡片 |
+| `850b12b` | fix: 分享预览改用 DOM 节点构建，堵住 HTML 注入并修掉连带遮蔽缺陷 |
+| `6ffc235` | fix: 隐私改为生成期脱敏、分享卡片长文本防溢出，并补真实浏览器验收 |
+| `fcc128d` | fix: 卡片版面改为按预算分配高度，修掉超长文本时描述画出人格面板 |
+| `d5f1685` | fix: 公开版脱敏前移到渲染之前（字段级三层），并补极端字符验收 |
+| `3c52a21` | fix: 公开版改为 fail-closed（检出残留即拒绝输出）、新增内容完整性检查与双引擎浏览器验收 |
+| `811af2f` | ci: 浏览器验收失败时输出 GitHub Actions 注解（含引擎版本与失败明细） |
+| `17db663` | fix: `demo` 新增 `--as-of` 固定基准日期，消除 CI 版面断言与文档预览的日期漂移 |
 
-### 5. 产物清单
+### 6. 产物清单
 
 | 文件 | 内容 |
 | --- | --- |
 | `report.html` | 单文件 HTML 年度报告，顶部固定「数据说明」区块 |
 | `report.md` | Markdown 版报告，含数据说明与各统计表 |
+| `story.html` | V2.0 六章节沉浸式故事页（个人完整版 / 公开分享版由 `--privacy` 决定） |
 | `profile.json` | 完整分析结果（含 coverage 覆盖率字段） |
 | `provenance.json` | 数据来源与覆盖率元数据 |
 | `doctor.json` | 真实 MCP 诊断结果（**含真实数据，勿公开**） |
 | `share.json` | **脱敏**后的结构报告（公开前仍建议人工通读） |
+| `share-card.png` | 分享卡片导出（1080×1920，不含元数据；由第 6 章在浏览器里生成） |
 | `orders.normalized.json` | 归一化后的订单（含个人信息，已 gitignore） |
 | `raw/*.json` | 各 MCP Tool 的原始返回（含个人信息，已 gitignore） |
 
@@ -181,27 +262,212 @@ $ python -m compileall -q mcd_timemachine scripts
 样本量确实压低可信度）、分组 2 条（同日 10 单仍 6/6 均分、不足 6 单给出 reason）、
 推荐 4 条（规格归并、同款不同规格不重复推荐、同品类上限 2 个、理由不超过 1 个分号）。
 
-## 九、WorkBuddy 在项目中的实际作用
+## 九、第五轮审查后升级：V2.0 产品体验（分支 `feature/v2-story`）
+
+第五轮审查确认分析层问题已闭环（小样本保护、可信度与支撑量、金额标题、口味分组、推荐归一化、
+测试与 Pages 全绿），建议把「移动端沉浸式故事 + 隐私友好分享卡片」独立成一个开发阶段。
+据此在独立功能分支 `feature/v2-story` 上做展示层升级，数据分析层（`collector.py` / `analyzer.py`）本轮未改动。
+
+| 审查建议 | 实现 |
+| --- | --- |
+| 六章节滚动式年度故事 | `story.py` 渲染 6 个 `<section class="scene">`：时光机启动 / 故事的起点 / 我的麦麦日常 / 口味人格测试结果 / 这一年的变化 / 年度终章；右侧圆点导航 + 顶部进度条 |
+| 采用 CSS 渐显 + 原生 IntersectionObserver | 章节正文由 Python 直出，JS 只做增强；`.reveal` 默认可见，只有 `<html class="js">` 接管后才渐显；`prefers-reduced-motion` 下不做任何位移与渐变 |
+| 动画失效时内容仍完整可读 | 无 `IntersectionObserver` 或降低动效时，直接给所有 `.reveal` 加 `is-visible` 并移除渐显；`<noscript>` 明确提示内容可读 |
+| 移动端适配与中文换行 | `svh` 高度 + 安全区留白 + `overflow-wrap: anywhere`；`clamp()` 标题字号；`@media (max-width:380px)` 兜底 |
+| 隐私友好竖版分享卡片 | 第 6 章 Canvas 绘制 1080×1920 PNG；金额 / 门店 / 日期三项**默认隐藏**，未勾选字段不进入绘制文本，也不写入「复制卡片配置」 |
+| 不要继续把 HTML/CSS/JS 堆进 reporter.py | 拆分出 `assets/story.html`（骨架）、`assets/story.css`、`assets/story.js`，由 `story.py` 注入数据组装；`reporter.py` 保持只管完整报告 |
+| 保留原有报告 | `report.md` / `report.html` / `profile.json` 原样保留，新增 `story.html`；`mcdtm story` 可单独重刷故事页 |
+| 用独立分支与 PR 合并 | 分支 `feature/v2-story`，验收后再 PR 合入 `main`，不覆盖现有可用版本 |
+
+新增 `tests/test_story.py`（六章结构、标签闭合、无外链离线、隐私默认、JSON 转义防 `</script>` 逃逸、
+恶意商品名 / 特殊字符 / 中文长文本、属性转义、变量遮蔽护栏、降级开关、卡片尺寸、空数据），
+单元测试 108 → **154 条**。
+另加 `scripts/smoke_story.js`：用 jsdom 真跑页面脚本，覆盖**增强路径**（渐显 / 圆点 / 条形图设宽）、
+**降级路径**（无 `IntersectionObserver` 时 36/36 内容仍可见）与**恶意数据路径**（把商品名 / 门店名换成
+HTML 注入载荷与超长中文，断言预览区不产生任何可执行节点），并断言默认状态下真实金额 / 门店 / 日期
+不会被画进图片；GitHub Actions 新增 `story` job 每次推送自动执行。
+
+### 合并前修复：分享预览的 HTML 注入（P1，第五轮审查提出）
+
+| 问题 | 处理 | 证据 |
+| --- | --- | --- |
+| `story.js` 用 `innerHTML` 拼接口味标签、年度关键词与分享字段，订单内容里的 `<` `>` 会被当 HTML 解析 | 改为统一用 `textContent` + DOM 节点构建：新增 `el(tag, text)` 建节点助手与 `previewRow()` 组装预览行；`story.js` 中不再存在任何 `innerHTML` / `outerHTML` / `insertAdjacentHTML` / `document.write` | `tests/test_story.py::TestSharePreviewInjection`，及 `scripts/smoke_story.js` 恶意数据路径 30 项断言 |
+| 修复过程中引入的新缺陷：`initShare()` 里 `var el = $("f-…")` 因函数级提升**遮蔽**了 `el()` 助手，导致 `previewRow` 抛 `el is not a function`、分享面板整体失效（单元测试只做字符串断言，**未能发现**） | 循环变量改名 `box`（并加注释说明原因）；新增静态护栏测试禁止出现名为 `el` 的局部变量 / 参数 | `tests/test_story.py::TestNoShadowedHelper`；jsdom 冒烟从 10 项失败转为全通过 |
+| `_e()` 不转义单引号，而本模块片段统一用单引号包属性；`month` 取自订单日期前 7 个字符，属上游可控内容 | 新增 `_attr()`（`_e()` + `'` → `&#39;`），用于 `data-title` / `data-mask` / 月柱 `title` | `tests/test_story.py::TestAttributeEscaping`（含投毒 month 逃逸测试） |
+
+隐私默认值未改动：这一阶段为 `PRIVACY_DEFAULTS = {"amount": False, "store": False, "date": False}`
+（三项均默认隐藏，见第十节：第六轮把「生成时间」补成第 4 项），
+并有测试固定住「未勾选即隐藏、且不进绘制文本与配置文本」这一行为。
+
+## 十、第六轮审查修复：隐私边界、卡片排版与真实浏览器验收
+
+第六轮审查确认上一轮 P1 已修好，并提出三项待办：隐私模式需区分「完整报告」与「公开分享」、
+分享卡片长文本可能溢出、以及需要真实浏览器验收。逐条处理如下。
+
+| 优先级 | 审查意见 | 处理 | 证据 |
+| --- | --- | --- | --- |
+| P1 | 「隐私浏览」只是 CSS 遮挡，用户可能误以为原始数据已从文件中删除，建议区分两种模式 | 新增 `--privacy {personal,public}`：`public` 为**生成期脱敏**——金额 → 「金额已隐藏」、到日日期 → 「日期已隐藏」、门店名 → 「门店已隐藏」，脱敏作用于整份 HTML（含内联 JSON 数据块）；两模式各有顶部横幅说明这份文件里到底有什么；页脚在个人版明确写「请勿直接转发本文件」 | `tests/test_story.py::TestPublicMode`（14 条）、`TestsCliStory`、jsdom 冒烟 D 路径、浏览器验收公开版段落 |
+| P1 | 分享卡片长文本可能溢出：关键词只测换行没限宽，门店名等直接 `fillText` | 新增 `clip()` 单行截断（逐字回退 + 省略号）、`wrap(..., maxLines)` 末行省略号；改成**自上而下一次性分配高度预算**：关键词先排版拿真实行数 → 描述行数按剩余空间裁剪 → 人格面板高度自适应；字段值按「不与左侧标签重叠」计算可用宽度，再截断 | `TestCardLayoutGuards`（9 条）；jsdom 冒烟与浏览器验收的面板边界断言；导出样本 `docs/sample-share-card-longtext.png` |
+| P2 | 生成时间可能暴露在分享图片中，建议提供隐藏选项 | 「生成时间」变为分享卡片第 4 个字段，**默认隐藏**、纳入隐私默认值与「复制卡片配置」；未勾选时页脚也不再出现具体时刻 | `TestGeneratedAtHidden`（4 条）、jsdom 冒烟新增 4 项生成时间断言 |
+| P2 | 建议增加 Playwright 浏览器测试（375px、长商品名、隐私模式、六章滚动、PNG 导出） | 新增 `scripts/browser_check.js`：Chromium 375×812 视口下检查横向溢出、逐元素滚动验证 36 个渐显元素、长文本抗溢出、隐私开关、以及导出 PNG 的签名 / 尺寸 / 元数据块；CI 新增 `browser` job 并上传导出样本 | 本机 44 项全通过；`docs/sample-share-card*.png` 即该脚本产出的实物 |
+
+三处自查出的坑（都会记进本节，避免下次重犯）：
+
+- 浏览器的横向溢出检查一开始把可达性「跳到正文」链接（刻意放在 `left:-9999px`）判成溢出，
+  改为忽略完全位于左边界外的元素，并以 `scrollWidth <= innerWidth` 作为页面级判据。
+- 「六章滚动」最初按章断言 `.reveal` 数量，实测出现 `视口内 0/8` 的**空转假通过**
+  （整屏章节居中滚动后没有任何 `.reveal` 中心进入视口）。改为逐个元素滚到视口正中后
+  等它拿到 `.is-visible` 且透明度收敛到 1，并补一条「加载时首屏外内容确实未显现」的防空转断言。
+- **画布内的版式溢出，文字框「在画布内」这类断言查不出来**。人格面板原本写死 470 高，
+  而「人格名占两行 + 描述占三行」时描述第 3 行会落到面板外面。我一开始只看文字框有没有越出
+  1080×1920，结论是「全部通过」；后来用 Chromium 直接读导出 PNG 的像素、再拦截 Canvas 绘制调用，
+  才量出描述第 3 行在 `y869~902` 而面板底边是 `y856`、确实画到了面板外。
+  修法是把版式改成**自上而下一次性分配高度预算**：关键词先排版拿真实行数 → 算出剩余空间 →
+  描述行数按剩余空间自动裁剪 → 人格面板高度随之自适应，并在最后夹一次上限。
+  同时让页面把量出来的几何挂到 `window.__mcdCardLayout`（只含数字、不含原文），
+  jsdom 与浏览器两套验收都据此断言「描述没跑出面板 / 胶囊没压到字段面板 / 字段面板没越过页脚」。
+  默认数据下版式字节级不变（导出 PNG 与修复前完全一致），只有出现超长文本时才会触发裁剪。
+
+本轮测试总量：单元测试 **185 条**（上一阶段 154 → +31，新增 `TestPublicMode` 14、
+`TestGeneratedAtHidden` 4、`TestCardLayoutGuards` 9、`TestCliStory` 4）、
+jsdom 冒烟 **114 项**（四条路径：增强 / 降级 / 恶意数据 / 公开版，含面板边界 16 项）、
+真实浏览器验收 **44 项**（Chromium 375×812，含面板边界 9 项）。
+CI 三个 job 全绿：`unittest`（Python 3.9–3.13）、`story`（jsdom）、`browser`（Playwright，上传 PNG artifact）。
+
+## 十一、第七轮审查修复：公开版脱敏改为结构化 + 极端字符验收
+
+第七轮审查确认前两轮的功能与验收都已到位，提出两条加固建议：公开版脱敏不应依赖「文本长什么样」，
+以及分享卡片应补极端字符与跨浏览器测试。逐条处理如下。
+
+| 优先级 | 审查意见 | 处理 | 证据 |
+| --- | --- | --- | --- |
+| P1 | `redact_html()` 在 HTML 生成后才用正则替换金额 / 日期 / 门店名，依赖具体文本形态：新增一个不带 `¥` 的金额字段、或一个没进门店名单的地址字段就可能绕过。建议先做**字段级脱敏再渲染**，保留文本扫描作第二道防线，并补地址、订单编号、不同金额格式的回归测试 | 脱敏前移成三层：①`redact_profile()` 在**渲染之前**按**字段名**（地址 / 订单号 / 电话 / 坐标 / 账号 / 支付…）与**字段类型**（数值**白名单制**：只有登记过的计数才放行，其余一律按金额抹掉）脱敏；②`redact_html()` 保留，作用于成品 HTML 与内联 JSON；③`scrub_leaks()` 从原 profile 反推敏感原始值（含金额的多种格式化写法）比对成品，命中即替换。三层共用同一套 `_VALUE_RULES`，规则不会漂移 | `TestStructuredRedaction`（14 条）：数值字段必须显式分类、裸金额字段（`yearly_outlay`）被抹、地址/订单号/电话/坐标按字段名整体移除、「元」后缀金额与到日日期在数据层就被抹、关掉第三层仍零残留、故意拼回原值能被自检抓到、个人版不受影响 |
+| P2 | 建议补极端场景：空字符串、超长英文、Emoji、混合中英文、四项字段同时开启，核对 Canvas 实际绘制效果 | jsdom 冒烟新增**极端数据路径**（五项断言组）与浏览器验收新增**极端字符页面**，并在真实 Chromium 里导出样本人工核对；同时修掉两处被它暴露出来的问题（见下） | jsdom 冒烟 E 路径 11 项、浏览器验收极端段落 9 项；导出实物 `docs/sample-share-card-extreme.png` |
+
+**P2 顺带修掉的两处问题**（都是极端数据测出来的）：
+
+- **Emoji 会被劈成半个字符**：`clip()` / `wrap()` 原来按 UTF-16 码元切片，
+  `😋` 这类字符只切到高代理项，画出来是方框。改为按**字素**步进
+  （整码点 + 变体选择符 + ZWJ 串联 +组合附加符号），`👨‍👩‍👧‍👦` 这类组合也不会被拆散。
+- **只有空白的字段值会画出一行空白**：`生成时间` 拿到空串 / 空白时，卡片上只有标签没有值。
+  改为回落到「—」。
+
+**自查出的坑**（本轮自己踩到、也最容易再犯）：
+
+- **年份被顺手抹掉了**。`range_end` 从 `2026-01-05` 变成「日期已隐藏」后，标题里
+  `end[:4]` 会得到「日期已」——页面标题会变成「你的 日期已 麦麦年度回忆」。
+  修法是在脱敏时把年份单独留在 `story_year` 里（年份本身不敏感，且第 5 章的月度趋势
+  本来就保留「年-月」粒度），并加一条测试固定住「公开版标题仍带年份、但不含到日日期」。
+- **第三层自检原本抓不到「渲染出来的金额」**。敏感值原先只从**字符串**字段里提取，
+  而金额字段是数值（`display_spend` / `avg_order` / `spend`），于是
+  `scan_leaks(html, profile)` 里的候选值根本没有 `¥1,288.40` 这种形态——
+  自检看起来有、实际对主要泄漏面是空的。是在写「过短的值不参与比对」这条测试时发现的：
+  补上金额的多种格式化写法（含货币符号前缀）后，自检才真的能抓到拼回去的金额。
+
+本轮测试总量：单元测试 **203 条**（上一阶段 185 → +18，新增 `TestStructuredRedaction` 14、
+`TestExtremeTextGuards` 4）、jsdom 冒烟 **133 项**（五条路径：增强 / 降级 / 恶意数据 / 极端字符 / 公开版）、
+真实浏览器验收 **53 项**（Chromium 375×812，含极端字符页面与 PNG 导出）。
+正常数据的版式零回归：`docs/sample-share-card.png` 与上一轮**字节级一致**（md5 未变）。
+
+## 十二、第八轮审查修复：公开版 fail-closed + 内容完整性 + 双引擎验收
+
+第八轮审查确认前七轮的脱敏、极端字符与浏览器测试都已到位，提出三条意见：
+脱敏失败时应**直接阻止输出**、隐私规则不宜无限扩大、以及手机浏览器兼容性要覆盖 Safari。
+逐条处理如下。
+
+| 优先级 | 审查意见 | 处理 | 证据 |
+| --- | --- | --- | --- |
+| P1 | 第三层自检若发现敏感值残留，目前是「就地替换后继续输出」。若将来新增字段时脱敏规则漏了，程序会默默掩盖，用户拿到一个看起来正常、实则含隐私的 HTML。建议**最终检查发现残留就直接终止公开版生成**，不写出任何文件 | 第三层改为 **fail-closed**：`verify_no_leaks()` 检出残留即抛 `PrivacyLeakError`，`write_story()` 采用**先渲染（自检在其中）→ 写临时文件 → `os.replace()` 原子落盘**的顺序，自检不过一行都不写。CLI 对应**退出码 3**，并在终端逐条打出**已打码**的命中行（不能一边报泄漏、一边把敏感值又打到终端上）。为可测性保留 `render_story(..., leak_check=False)`：只关掉第三层，用来证明**前两层单独就零残留** | `TestFailClosedPublishing`（8 条）：把前两层打成恒等函数可看到 12 处命中、关掉第三层时这 12 处全暴露（证明检查不是摆设）、`write_story` 不落盘、`write_reports` 不吞异常、CLI 退出码 3 且无 `story.html`、报错文本不含任何敏感原值 |
+| P2 | 建议增加小数金额、中文地址、英文日期、异常字段名和嵌套数据的边界测试 | 补 `TestRedactionBoundaries`（11 条）：小数金额（`1288.4` / `28.5`）、带标签与不带标签的中文地址、英文与斜杠 / 短横日期（`June 27, 2026` / `2026/06/27` / `27/06/2026` / `06-27-2026`）、异常字段名（`addr2` / `mobile1` / `addressLine1` / `phoneNumber` / `receiverName` / `idCardNo` / `bankCard` / `emailAddress`）、嵌套数据。规则同步扩到 `_ALT_DATE_RES` / `_ALT_MONEY_RES` 与全角 `￥` | 实测：`¥`/`￥` 命中 0 次、`scan_leaks` 零残留、月粒度 15/15 与个人版一致 |
+| P2 | 隐私规则不宜无限扩大：当前数值字段白名单控制安全但过严，未来新增非敏感统计量会被误标「金额已隐藏」。建议把公开版允许展示的字段定义成明确的数据结构，并对脱敏后的内容做**完整性检查** | 引入 `PUBLIC_FIELD_POLICY`（分类登记计数与比例）导出 `_SAFE_NUMBER_KEYS`；`is_safe_number_key()` 放行「显式登记」或「带 `_pct`/`_rate`/`_ratio`/`_count` 后缀」的数值。新增 `public_completeness_issues()` / `verify_public_complete()` / `PublicContentError`，用源 profile 推导公开版应有的结构量（章节数、关键数字、条形行、胶囊数、人格卡、口味变化行、月柱数、关键词数、数据说明行、门店家数），对不上即拒绝输出（**退出码 4**） | `TestPublicCompleteness`（9 条）：正常数据通过、逐项构造「脱过头」场景（少一章 / 少一个数字 / 少一条月柱…）均被拦下。修复前 `spend_pct`(42)、`refund_count`(12345)、`delivery_fee_rate`(0.15) 曾被误当金额抹掉，现已保留原值 |
+| P2 | 手机浏览器兼容性：在现有 Chromium 测试之外，增加 Safari/iOS 和 Android Chrome 人工验收 | 验收脚本参数化 `--engine=chromium\|webkit` 与 `--viewport=WxH`，导出样本按引擎分目录；CI 的 `browser` job 拆成两个 step（Chromium 375×812 对标 Android Chrome、WebKit 390×844 对标 iPhone Safari）；`docs/REAL_DEVICE_CHECK.md` 补 Safari 侧注意事项 | 双引擎**各 53 项**全部通过；新增导出实物 `docs/sample-share-card-webkit.png`。jsdom 冒烟另补两条交叉比对：公开版六章结构与个人版逐项一致、月粒度一致（**135 项**） |
+
+**一处接口语义的变化**（值得记下）：原先第三层的辅助函数叫 `scan_leaks()`、测试开关叫 `value_sweep`，
+它做的事是「发现就替换」。改成 fail-closed 后语义完全相反，因此把函数改名 `verify_no_leaks()`、
+开关改名 `leak_check`，`__all__` 里去掉旧名 —— 避免留下一个「名字听起来只是扫描、
+实际会终止程序」的坑。`reporter.write_reports()` 里原本有一句 `except Exception: pass`，
+会把 `PrivacyLeakError` 一起吞掉（用户只看到「报告已生成」却没有故事页），现已改为
+`except (PrivacyLeakError, PublicContentError): raise`，让失败真的浮到 CLI。
+
+**自查出的坑**：
+
+- **过度脱敏把自己人误伤**。`spend_pct` / `refund_count` / `delivery_fee_rate` 这类比例与计数
+  被数值兜底当成了金额，公开版上直接显示「金额已隐藏」。加了 `_NON_MONEY_NUMBER_SUFFIX` 后缀判据后
+  才能保留；同时确认这些 safe 数值**不会**进 `sensitive_tokens()` 候选，否则自检会把自己渲染的值当泄漏报出来。
+- **空数据时完整性检查误报**。空 profile 只渲染第 1、2 章，`_section_slice()` 对第 3–6 章返回空串，
+  于是「章节缺失」报了一堆。改为用 `expected = set(want["chapters"])` 逐章门控——**只检查源数据里确实存在的章节**。
+- **零回归证明的方法**。上一轮曾担心脱敏改动影响个人版输出，事后查明差异全部来自
+  `demo_data.py` 里 `end = datetime.now()` 导致的周次/时段计数漂移，不是代码回归。
+  为把这件事彻底钉死，本轮用 `git archive HEAD` 把上一提交（`ead8ff5`）导出到独立目录，
+  与工作区代码用**同一个冻结 profile** 分别渲染个人版与公开版，`cmp` 结果**两者都逐字节一致**。
+
+本轮测试总量：单元测试 **239 条**（上一阶段 203 → +36，新增 `TestRedactionBoundaries` 11、
+`TestPublicCompleteness` 9、`TestFailClosedPublishing` 8、`TestBrowserHarness` 4、
+示例数据可复现性 4）、
+jsdom 冒烟 **135 项**（五条路径，公开版新增结构与月粒度交叉比对）、
+真实浏览器验收 **Chromium 与 WebKit 各 53 项**（两引擎均含极端字符页面与 PNG 导出）。
+CI 三个 job 全绿：`unittest`（Python 3.9–3.13）、`story`（jsdom）、`browser`（Playwright 双引擎，上传 PNG artifact）。
+
+**首次推送后 CI 上暴露的一个问题（值得记录）**：第一轮 CI 里 `browser` job 的 WebKit 步骤**失败过一次**
+（Chromium 步骤通过），本地同参数却全过。两件事由此改进：
+
+1. **CI 失败要能远程诊断**。本机只有运行时权限、没有仓库管理员权限，
+   `job logs` 接口返回 403，页面的日志区也不是服务端渲染的，**拿不到任何失败明细**。
+   于是给 `browser_check.js` 加了 GitHub Actions **注解输出**（`::error title=…::明细`）：
+   失败时把引擎版本、视口、逐条 FAIL 行写进 check 注解，注解可通过公开的 check-runs API 读取。
+   加完之后重跑一轮 **CI 全绿**，说明那次 WebKit 失败是非确定性的。
+2. **非确定性的来源**。示例数据的随机种子是固定的（`seed=1024`），
+   但 `end = datetime.now()` 让「基准日期」每次都在变，于是周次、时段、月度桶的分布随之漂移，
+   版面几何断言在个别日期就会擦边失败；文档预览页每天产生的无意义 diff 也是同一个原因
+   （本轮同步预览时就看到区间从 `2025-09-13` 变成 `2025-09-14`）。
+   为此给 `mcdtm demo` 加了 `--as-of YYYY-MM-DD`，CI 用它把基准日期钉死，
+   并补了 4 条测试（同一 seed + 同一 as-of 两次生成逐字节一致、换基准日期数据确实变化、
+   带时区的 datetime 不炸、格式非法时报错且不落盘）。
+
+   > 说明：本轮**没有**拿到那次 WebKit 失败的原始日志，因此不能断言「就是日期漂移导致的」。
+   > 已确认的是：加上注解机制后重跑全绿，且日期漂移确实是版面断言里唯一的不确定输入，
+   > 现在它被固定了。若再次出现，注解会直接给出失败行。
+
+## 十三、WorkBuddy 在项目中的实际作用
 
 - **调研**：检索并归纳官方赛事规则与 29 个 MCP Tool 的能力边界，据此收敛选题
 - **架构设计**：分层设计（客户端 / 采集 / 分析 / 呈现 / 演示 / 可信度 / 排障）与容错策略
 - **编码实现**：全部源码由 WorkBuddy 在 Agent 模式下直接写入文件
 - **自测迭代**：运行 demo 与单元测试，根据输出反向修正品类规则、阈值与去重逻辑
-- **问题修复**：依据四轮静态审查报告逐条修复，并补充回归测试守住修复结果
+- **问题修复**：依据八轮静态审查报告逐条修复，并补充回归测试守住修复结果
 - **工程化**：Windows 教程、一键向导、脱敏排障、CI 与 Pages 工作流
 - **参赛材料与发布**：README、MCP 集成说明、Skill 定义、git 初始化与推送
 
-## 十、证据边界（如实说明）
+## 十四、证据边界（如实说明）
 
 为免夸大，明确以下边界：
 
-1. **已完成**：示例数据全链路、108 条单元测试、CI 在 Python 3.9–3.13 上通过、编译检查通过。
+1. **已完成**：示例数据全链路、239 条单元测试、CI 在 Python 3.9–3.13 上通过、编译检查通过、
+   故事页前端冒烟（jsdom，增强 / 降级 / 恶意数据 / 极端字符 / 公开版五路径，135 项）通过、
+   浏览器验收（Playwright，Chromium 375×812 与 WebKit 390×844 两个引擎**各 53 项**）通过。
 2. **尚未完成**：**真实 MCP 联调需账号持有者本人执行**（WorkBuddy 没有用户的 Token，也不应索取）。
    在联调完成前，本项目不作「已通过真实环境验收」的表述。
    官方 `order-list` 描述为「查询**近期**订单」，服务端可能只返回有限条数，属接口范围而非本工具缺陷。
 3. **截图类证据**：WorkBuddy 无法自行截取会话界面。如需补充截图，可在本地按第四节的命令
    复现后自行截图附于 Issue，本文件的命令与产物可与之交叉验证。
-4. **本文件不含**任何真实 Token、密钥、订单号或个人敏感信息。
+4. **前端验收的准确范围**：已做到「真实浏览器内核」，且**覆盖两个引擎**——
+   Chromium（设备参数 375×812、DPR 3、`isMobile`/`hasTouch`）与 WebKit（390×844，对标 iPhone Safari），
+   覆盖真实布局引擎、真实字体回退与真实 Canvas 编码；
+   但**仍未在真机**（iOS Safari / Android Chrome）上人工走查，未覆盖真机滚动惯性、
+   地址栏收缩、`<a download>` 行为差异等情况。为此单独整理了
+   [docs/REAL_DEVICE_CHECK.md](docs/REAL_DEVICE_CHECK.md)：把页面放到手机上的三种方式
+   （传文件 / 局域网静态服务 / 合并后走 Pages）与一份逐项打勾的走查清单。
+   仓库里的 `docs/sample-share-card*.png` 是 CI/本地真实引擎的导出实物，不是设计稿；
+   其中 `sample-share-card-webkit.png` 体积明显小于 Chromium 版，是 WebKit 采用调色板 /
+   更低色深编码所致（PNG 元数据多出 `sRGB`/`sBIT`），像素尺寸与内容一致。
+5. **脱敏模式的边界**：`--privacy public` 分三层脱敏，并在输出前加了两道 fail-closed 守卫，但仍有明确边界：
+   ①「年-月」粒度被有意保留（第 5 章趋势图依赖它）；
+   ② 判据是「字段名 + 字段类型 + 已知值形态」，若新增字段名不在登记表内、
+   数值又不带货币符号、也不在自检的归因范围内，仍需人工更新登记表（有测试逼着做这次判断）——
+   但**与上一版不同的是，这类遗漏会导致公开版生成直接失败（退出码 3），而不是静默输出**；
+   ③ 三层都是**移除与替换**，不做加密或替换映射，无法从成品还原原文——这正是设计意图。
+   公开前仍建议自己通读一遍，本工具不承诺「任何情况下都不可能泄露」。
+6. **本文件不含**任何真实 Token、密钥、订单号或个人敏感信息。
 
 ---
 

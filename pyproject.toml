@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcd-time-machine"
-version = "1.0.0"
+version = "2.0.0"
 description = "麦麦时光机：基于麦当劳中国 MCP 的历史订单年度报告、口味画像与消费趋势分析工具"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -28,3 +28,7 @@ mcdtm = "mcd_timemachine.cli:main"
 
 [tool.setuptools]
 packages = ["mcd_timemachine"]
+
+# 故事页模板资源（HTML 骨架 / CSS / JS），随包分发，保证离线可用
+[tool.setuptools.package-data]
+mcd_timemachine = ["assets/*.html", "assets/*.css", "assets/*.js"]

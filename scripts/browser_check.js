@@ -215,14 +215,27 @@ async function scrollThroughPage(page) {
 }
 
 /* 把第 chapterId 章第 index 个 .reveal 滚到视口正中（保证必然进入观察器范围），
- * 再轮询到它拿到 .is-visible 且渐显过渡结束。有上界，不会无限等。 */
-async function revealElement(page, chapterId, index, maxMs = 2500) {
+ * 再轮询到它拿到 .is-visible 且渐显过渡结束。有上界，不会无限等。
+ *
+ * 注意两个会制造假失败的坑（都已在 CI 上真实发生过）：
+ *  1. 页面 CSS 里有 `html { scroll-behavior: smooth }`，用 window.scrollBy 会启动一段
+ *     平滑滚动动画。WebKit 在 CI 上走软件渲染、动画更慢，元素迟迟不进入观察器，
+ *     等它开始渐显时轮询窗口已经快用完，于是采到 opacity=0.218 这种「过渡进行中」的值，
+ *     被误判成「没有显现」。→ 测试里强制瞬时滚动（只关滚动动画，渐显过渡照旧验证）。
+ *  2. 早退条件里带了 `centered`。文档末尾的元素本来就不可能滚到正中，条件永远不成立，
+ *     循环只能跑满 maxMs 再返回一个过渡中的快照。→ 只等真正被断言的两条
+ *     （.is-visible + opacity≥0.99），centered 仅作诊断信息输出。
+ */
+async function revealElement(page, chapterId, index, maxMs = 6000) {
   const scrolled = await page.evaluate((arg) => {
     const els = document.querySelectorAll('#ch' + arg[0] + ' .reveal');
     const el = els[arg[1]];
     if (!el) return false;
+    // 关掉平滑滚动，否则下面这次跳转会变成动画
+    document.documentElement.style.scrollBehavior = 'auto';
     const r = el.getBoundingClientRect();
-    window.scrollBy(0, r.top + r.height / 2 - window.innerHeight / 2);
+    const top = window.scrollY + r.top + r.height / 2 - window.innerHeight / 2;
+    window.scrollTo(0, Math.max(0, top));
     return true;
   }, [chapterId, index]);
   if (!scrolled) return null;
@@ -240,9 +253,9 @@ async function revealElement(page, chapterId, index, maxMs = 2500) {
           el.getBoundingClientRect().bottom) / 2 - window.innerHeight / 2) < 4,
       };
     }, [chapterId, index]);
-    if (last && last.visible && last.opacity >= 0.99 && last.centered) return last;
+    if (last && last.visible && last.opacity >= 0.99) return last;
     if (Date.now() >= deadline) return last;
-    await page.waitForTimeout(120);
+    await page.waitForTimeout(100);
   }
 }
 
